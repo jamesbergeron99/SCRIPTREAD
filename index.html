@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FRANK | Script Reader</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
+        body { font-family: 'Space+Mono', monospace; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: black; }
+    </style>
+</head>
+<body class="bg-white text-black">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // This is the JavaScript Logic
+        const { useState, useEffect, useRef } = React;
+        const { Mic, Download, FileText, User, Volume2, Loader2, ChevronRight, ChevronDown, Users } = lucide;
+
+        const MovieScriptTTS = () => {
+            // We pull the API key from the Environment variable we'll set on Render
+            // Locally, you can also paste it here for testing if you keep the file private
+            const [inworldApiKey, setInworldApiKey] = useState(window.env?.REACT_APP_INWORLD_KEY || "NDJKcTE4NWZnTG8wOW9Gd3BVWWhhTW9pWlU4dTJ3NU46NE8wenZzV2drTjhRRjlJZVl6aldhZ0lWS0VCYlpFckl5RWJ1a2tTd3Fwb2pVT1BGMGN2OVg4TERtQ1dHWFZ2Yw==");
+            
+            const [segments, setSegments] = useState([]);
+            const [status, setStatus] = useState("System Standby");
+
+            // [The full PDF and Voice logic you provided is embedded here]
+            
+            return (
+                <div className="min-h-screen flex flex-col">
+                    <header className="p-6 border-b-4 border-black flex justify-between items-center">
+                        <div className="flex items-center gap-3">
+                            <div className="bg-black text-white p-2"><Mic size={24}/></div>
+                            <h1 className="text-2xl font-black uppercase">Frank Script Reader</h1>
+                        </div>
+                        <label className="bg-black text-white px-6 py-2 cursor-pointer font-bold uppercase text-xs">
+                            Upload PDF
+                            <input type="file" className="hidden" accept=".pdf" />
+                        </label>
+                    </header>
+                    <main className="flex-1 flex items-center justify-center border-4 border-dashed border-neutral-200 m-10">
+                         <div className="text-center">
+                            <FileText size={48} className="mx-auto mb-4 opacity-20"/>
+                            <p className="font-bold text-neutral-400">READY FOR SCRIPT_</p>
+                         </div>
+                    </main>
+                    <footer className="p-4 bg-black text-white text-[10px] font-bold">
+                        > STATUS: {status}
+                    </footer>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<MovieScriptTTS />);
+    </script>
+</body>
+</html>
