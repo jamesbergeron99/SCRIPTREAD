@@ -15,6 +15,7 @@
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: black; }
         select { appearance: none; background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%223%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M6%209l6%206%206-6%22%3E%3C%2Fpath%3E%3C%2Fsvg%3E"); background-repeat: no-repeat; background-position: right 0.75rem center; }
+        .paywall-blur { backdrop-filter: blur(8px); background: rgba(255,255,255,0.8); }
     </style>
 </head>
 <body class="bg-white text-black">
@@ -46,9 +47,10 @@
             const [isExporting, setIsExporting] = useState(false);
             const [exportProgress, setExportProgress] = useState(0);
             
-            // Monetization States
+            // PAYWALL STATES
             const [isUnlocked, setIsUnlocked] = useState(false);
             const [totalSecondsRead, setTotalSecondsRead] = useState(0);
+            const [showPaywall, setShowPaywall] = useState(false);
             const [unlockCode, setUnlockCode] = useState("");
             const TRIAL_LIMIT = 30;
 
@@ -61,15 +63,21 @@
                 audioContext.current = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
             }, []);
 
-            const checkUnlock = () => {
-                // You can change "frank2026" to whatever you want your password to be
-                if (unlockCode.toLowerCase() === "frank2026") {
-                    setIsUnlocked(true);
-                    setStatus("PRO UNLOCKED");
+            const stopAudio = () => {
+                if (activeSource.current) {
+                    activeSource.current.onended = null;
+                    activeSource.current.stop();
+                    activeSource.current = null;
                 }
             };
 
-            const cleanText = (t) => t.replace(/\([^)]*\)/g, "").trim();
+            const checkUnlock = () => {
+                if (unlockCode.toLowerCase() === "frank2026") {
+                    setIsUnlocked(true);
+                    setShowPaywall(false);
+                    setStatus("PRO UNLOCKED");
+                }
+            };
 
             const parseScript = (lines) => {
                 const blocks = [];
@@ -78,9 +86,12 @@
                 lines.forEach(line => {
                     const text = line.text.trim();
                     const x = line.x;
-                    if (!text || text.match(/^\d+$/) || text.match(/PAGE\s+\d+/i)) return;
+                    const isPageNum = text.match(/^\d+$/) || text.match(/^PAGE\s+\d+$/i) || text.match(/^\d+\s*\.$/);
+                    if (!text || isPageNum) return;
+
                     const isUppercase = text === text.toUpperCase();
                     const isCentered = x > 180 && text.length < 30;
+
                     if (isUppercase && isCentered) {
                         const name = text.replace(/\([^)]*\)/g, "").trim();
                         foundChars.add(name);
@@ -116,6 +127,7 @@
                 setStatus("LOADED");
                 setCurrentIdx(-1);
                 setTotalSecondsRead(0);
+                setShowPaywall(false);
             };
 
             const fetchAudio = async (text, voiceId) => {
@@ -131,52 +143,65 @@
                 return await audioContext.current.decodeAudioData(bytes.buffer);
             };
 
-            const stopAudio = () => {
-                if (activeSource.current) {
-                    activeSource.current.onended = null;
-                    activeSource.current.stop();
-                    activeSource.current = null;
-                }
-            };
-
             const playSegment = async (index) => {
-                if (index >= segments.length || !isPlaying) return;
-
-                // TRIAL CHECK
-                if (!isUnlocked && totalSecondsRead >= TRIAL_LIMIT) {
-                    setIsPlaying(false);
-                    setStatus("TRIAL LIMIT REACHED");
+                // STOP IF PLAYBACK IS OFF OR LIMIT HIT
+                if (!isPlaying || index >= segments.length) {
+                    if (index >= segments.length) setIsPlaying(false);
                     return;
                 }
 
-                stopAudio();
+                if (!isUnlocked && totalSecondsRead >= TRIAL_LIMIT) {
+                    setIsPlaying(false);
+                    setShowPaywall(true);
+                    setStatus("TRIAL LIMIT");
+                    stopAudio();
+                    return;
+                }
+
                 setCurrentIdx(index);
                 const seg = segments[index];
                 const voice = seg.type === 'narrator' ? voiceMap.Narrator : voiceMap[seg.character];
-                const text = cleanText(seg.text);
+                const text = seg.text.replace(/\([^)]*\)/g, "").trim();
 
-                if (!text || text.length < 2) { playSegment(index + 1); return; }
+                if (!text || text.length < 2) {
+                    playSegment(index + 1);
+                    return;
+                }
 
                 try {
                     const buffer = await fetchAudio(text, voice);
-                    setTotalSecondsRead(prev => prev + buffer.duration);
+                    
+                    // Kill any zombie audio before starting new
+                    stopAudio();
+
                     const source = audioContext.current.createBufferSource();
                     source.buffer = buffer;
                     source.connect(audioContext.current.destination);
-                    source.onended = () => { if (isPlaying) playSegment(index + 1); };
+                    
+                    source.onended = () => {
+                        setTotalSecondsRead(prev => prev + buffer.duration);
+                        if (isPlaying) playSegment(index + 1);
+                    };
+
                     activeSource.current = source;
                     source.start();
-                } catch (e) { playSegment(index + 1); }
+                } catch (e) {
+                    playSegment(index + 1);
+                }
             };
 
+            // STRICT EFFECT FOR PAUSE
             useEffect(() => {
-                if (isPlaying) playSegment(currentIdx === -1 ? 0 : currentIdx);
-                else stopAudio();
+                if (isPlaying) {
+                    playSegment(currentIdx === -1 ? 0 : currentIdx);
+                } else {
+                    stopAudio();
+                }
             }, [isPlaying]);
 
             const masterAndExport = async () => {
                 if (segments.length === 0) return;
-                if (!isUnlocked) { setStatus("UPGRADE TO EXPORT"); return; }
+                if (!isUnlocked) { setShowPaywall(true); return; }
                 setIsExporting(true);
                 setExportProgress(0);
                 const buffers = [];
@@ -184,7 +209,7 @@
                     for (let i = 0; i < segments.length; i++) {
                         setExportProgress(Math.round((i / segments.length) * 100));
                         const seg = segments[i];
-                        const text = cleanText(seg.text);
+                        const text = seg.text.replace(/\([^)]*\)/g, "").trim();
                         if (!text || text.length < 2) continue;
                         const buffer = await fetchAudio(text, seg.type === 'narrator' ? voiceMap.Narrator : voiceMap[seg.character]);
                         buffers.push(buffer);
@@ -199,7 +224,8 @@
                     link.href = URL.createObjectURL(new Blob([wavData], { type: 'audio/wav' }));
                     link.download = "Scriptread_Master.wav";
                     link.click();
-                } catch (e) { setStatus("EXPORT ERROR"); }
+                    setStatus("COMPLETE");
+                } catch (e) { setStatus("ERROR"); }
                 setIsExporting(false);
             };
 
@@ -207,19 +233,10 @@
                 const length = buffer.length * 2;
                 const view = new DataView(new ArrayBuffer(44 + length));
                 const writeString = (o, s) => { for (let i=0; i<s.length; i++) view.setUint8(o+i, s.charCodeAt(i)); };
-                writeString(0, 'RIFF');
-                view.setUint32(4, 36 + length, true);
-                writeString(8, 'WAVE');
-                writeString(12, 'fmt ');
-                view.setUint32(16, 16, true);
-                view.setUint16(20, 1, true);
-                view.setUint16(22, 1, true);
-                view.setUint32(24, 24000, true);
-                view.setUint32(28, 48000, true);
-                view.setUint16(32, 2, true);
-                view.setUint16(34, 16, true);
-                writeString(36, 'data');
-                view.setUint32(40, length, true);
+                writeString(0, 'RIFF'); view.setUint32(4, 36 + length, true); writeString(8, 'WAVE'); writeString(12, 'fmt ');
+                view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+                view.setUint32(24, 24000, true); view.setUint32(28, 48000, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+                writeString(36, 'data'); view.setUint32(40, length, true);
                 const data = buffer.getChannelData(0);
                 let offset = 44;
                 for (let i=0; i<data.length; i++, offset+=2) {
@@ -238,23 +255,37 @@
             );
 
             return (
-                <div className="flex flex-col h-screen overflow-hidden">
-                    <header className="border-b-4 border-black p-4 flex justify-between items-center bg-white shrink-0 z-10">
-                        <h1 className="text-2xl font-black uppercase tracking-tighter">Scriptread</h1>
+                <div className="flex flex-col h-screen overflow-hidden relative">
+                    {/* PAYWALL POPUP */}
+                    {showPaywall && (
+                        <div className="fixed inset-0 z-[100] paywall-blur flex items-center justify-center p-6">
+                            <div className="max-w-md w-full border-[6px] border-black bg-white p-8 shadow-[15px_15px_0px_0px_rgba(0,0,0,1)] text-center">
+                                <h2 className="text-3xl font-black uppercase mb-4 tracking-tighter italic">Like what you hear?</h2>
+                                <p className="font-bold text-sm mb-8 leading-tight uppercase">Please contribute to the cost of these excellent professional voices to unlock the full script.</p>
+                                <div className="space-y-4">
+                                    <a href="YOUR_PAYMENT_LINK" target="_blank" className="block w-full bg-black text-white py-4 font-black uppercase text-sm hover:scale-[1.02] transition-transform">Get Access ($9.99)</a>
+                                    <div className="flex gap-2">
+                                        <input type="password" value={unlockCode} onChange={(e) => setUnlockCode(e.target.value)} placeholder="ENTER UNLOCK CODE" className="flex-1 border-4 border-black p-2 text-xs font-bold outline-none" />
+                                        <button onClick={checkUnlock} className="bg-black text-white px-4 font-black text-xs uppercase">Unlock</button>
+                                    </div>
+                                    <button onClick={() => setShowPaywall(false)} className="text-[10px] font-black uppercase underline">Maybe Later</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    <header className="border-b-4 border-black p-4 flex justify-between items-center bg-white shrink-0 z-10 shadow-sm">
+                        <h1 className="text-2xl font-black uppercase tracking-tighter italic">Scriptread</h1>
                         <div className="flex gap-3">
-                            {!isUnlocked && <div className="text-[10px] font-black border-2 border-black px-2 py-2 bg-yellow-400 self-center">FREE TRIAL: {Math.round(totalSecondsRead)}s / {TRIAL_LIMIT}s</div>}
-                            <button onClick={masterAndExport} className="px-4 py-2 border-4 border-black font-black text-[10px] hover:bg-black hover:text-white transition-all uppercase">
-                                {isExporting ? `${exportProgress}%` : "MASTER & EXPORT"}
-                            </button>
-                            <label className="px-4 py-2 bg-black text-white font-black text-[10px] cursor-pointer hover:invert border-2 border-black transition-all uppercase">
-                                Load PDF <input type="file" className="hidden" accept=".pdf" onChange={handleFileUpload} />
-                            </label>
+                            {!isUnlocked && <div className="text-[10px] font-black border-2 border-black px-2 py-2 bg-yellow-400 self-center uppercase">Trial: {Math.round(totalSecondsRead)}s / {TRIAL_LIMIT}s</div>}
+                            <button onClick={masterAndExport} className="px-4 py-2 border-4 border-black font-black text-[10px] hover:bg-black hover:text-white transition-all uppercase">{isExporting ? `${exportProgress}%` : "Master & Export"}</button>
+                            <label className="px-4 py-2 bg-black text-white font-black text-[10px] cursor-pointer hover:invert border-2 border-black transition-all uppercase">Load PDF <input type="file" className="hidden" accept=".pdf" onChange={handleFileUpload} /></label>
                         </div>
                     </header>
 
                     <div className="flex-1 flex overflow-hidden">
                         <aside className="w-64 border-r-4 border-black bg-gray-50 overflow-y-auto custom-scrollbar shrink-0">
-                            <div className="p-2 bg-black text-white font-black text-[10px] uppercase">Cast Assignments</div>
+                            <div className="p-2 bg-black text-white font-black text-[10px] uppercase tracking-widest italic">Cast</div>
                             <div className="p-4 space-y-4">
                                 <div className="p-2 border-2 border-black bg-white">
                                     <p className="text-[9px] font-black text-gray-400 uppercase">Narrator</p>
@@ -262,21 +293,16 @@
                                 </div>
                                 {characters.map(char => (
                                     <div key={char} className="p-2 border-2 border-black bg-white">
-                                        <p className="text-[9px] font-black uppercase">{char}</p>
+                                        <p className="text-[9px] font-black uppercase tracking-tight">{char}</p>
                                         <select value={voiceMap[char]} onChange={(e) => setVoiceMap({...voiceMap, [char]: e.target.value})} className="w-full text-[10px] font-bold outline-none"><VoiceList /></select>
                                     </div>
                                 ))}
-                                <div className="pt-10 border-t-2 border-black">
-                                    <p className="text-[9px] font-black uppercase mb-2">Unlock Pro</p>
-                                    <input type="password" value={unlockCode} onChange={(e) => setUnlockCode(e.target.value)} placeholder="Enter Code" className="w-full border-2 border-black p-2 text-[10px] outline-none mb-2" />
-                                    <button onClick={checkUnlock} className="w-full bg-black text-white p-2 font-black uppercase text-[10px]">Unlock</button>
-                                </div>
                             </div>
                         </aside>
 
                         <main className="flex-1 p-8 overflow-y-auto bg-white custom-scrollbar pb-32">
                             {segments.map((seg, i) => (
-                                <div key={i} className={`p-6 border-2 mb-4 ${currentIdx === i ? 'bg-black text-white scale-[1.01]' : 'border-black opacity-30'}`}>
+                                <div key={i} className={`p-6 border-2 mb-4 transition-all ${currentIdx === i ? 'bg-black text-white scale-[1.01]' : 'border-black opacity-30'}`}>
                                     {seg.type === 'dialogue' && <p className={`text-[10px] font-black uppercase mb-1 ${currentIdx === i ? 'text-gray-300' : 'text-gray-500'}`}>{seg.character}</p>}
                                     <p className="text-sm font-bold uppercase leading-tight">{seg.text}</p>
                                 </div>
@@ -287,12 +313,12 @@
                     <footer className="shrink-0 border-t-4 border-black p-6 bg-white flex justify-between items-center z-10 shadow-[0_-4px_10px_rgba(0,0,0,0.1)]">
                         <div className="flex items-center gap-10 mx-auto">
                             <button onClick={() => { setIsPlaying(false); setCurrentIdx(Math.max(0, currentIdx - 1)); }}><svg width="32" height="32" viewBox="0 0 24 24" fill="black"><polygon points="11 19 2 12 11 5 11 19"/><polygon points="22 19 13 12 22 5 22 19"/></svg></button>
-                            <button onClick={() => { if (audioContext.current.state === 'suspended') audioContext.current.resume(); setIsPlaying(!isPlaying); }} className="bg-black text-white p-4 rounded-full">
+                            <button onClick={() => { if (audioContext.current.state === 'suspended') audioContext.current.resume(); setIsPlaying(!isPlaying); }} className="bg-black text-white p-4 rounded-full shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
                                 {isPlaying ? <svg width="32" height="32" viewBox="0 0 24 24" fill="white"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> : <svg width="32" height="32" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg>}
                             </button>
                             <button onClick={() => { setIsPlaying(false); setCurrentIdx(Math.min(segments.length - 1, currentIdx + 1)); }}><svg width="32" height="32" viewBox="0 0 24 24" fill="black"><polygon points="13 19 22 12 13 5 13 19"/><polygon points="2 19 11 12 2 5 2 19"/></svg></button>
                         </div>
-                        <div className="font-black text-[10px] uppercase absolute right-6 tracking-widest hidden md:block">Status: {status}</div>
+                        <div className="font-black text-[10px] uppercase absolute right-6 tracking-widest hidden md:block italic">Status: {status}</div>
                     </footer>
                 </div>
             );
