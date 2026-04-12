@@ -47,20 +47,15 @@
 
             const audioContext = useRef(null);
             const activeSource = useRef(null);
+            const isPlayingRef = useRef(false);
             const TRIAL_LIMIT = 30;
+
             const API_KEY = window.REACT_APP_INWORLD_KEY || "NDJKcTE4NWZnTG8wOW9Gd3BVWWhhTW9pWlU4dTJ3NU46NE8wenZzV2drTjhRRjlJZVl6aldhZ0lWS0VCYlpFckl5RWJ1a2tTd3Fwb2pVT1BGMGN2OVg4TERtQ1dHWFZ2Yw==";
 
             useEffect(() => {
                 window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
                 audioContext.current = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
             }, []);
-
-            useEffect(() => {
-                if (!isUnlocked && totalSeconds >= TRIAL_LIMIT) {
-                    stopAudio();
-                    setShowPaywall(true);
-                }
-            }, [totalSeconds, isUnlocked]);
 
             useEffect(() => {
                 if (showPaywall && window.paypal) {
@@ -74,6 +69,7 @@
             }, [showPaywall]);
 
             const stopAudio = () => {
+                isPlayingRef.current = false;
                 setIsPlaying(false);
                 if (activeSource.current) {
                     activeSource.current.onended = null;
@@ -84,7 +80,7 @@
 
             const parseScript = (lines) => {
                 const blocks = [];
-                let currentItem = null;
+                let currentDialogue = null;
                 const foundChars = new Set();
                 lines.forEach(line => {
                     const text = line.text.trim();
@@ -94,17 +90,13 @@
                     if (isChar) {
                         const name = text.replace(/\([^)]*\)/g, "").trim();
                         foundChars.add(name);
-                        currentItem = { type: 'dialogue', character: name, text: "" };
-                        blocks.push(currentItem);
-                    } else if (currentItem && currentItem.type === 'dialogue' && x > 120 && x < 350) {
-                        currentItem.text += (currentItem.text ? " " : "") + text;
+                        currentDialogue = { type: 'dialogue', character: name, text: "" };
+                        blocks.push(currentDialogue);
+                    } else if (currentDialogue && x > 120 && x < 300) {
+                        currentDialogue.text += " " + text;
                     } else {
-                        if (blocks.length > 0 && blocks[blocks.length-1].type === 'narrator') {
-                            blocks[blocks.length-1].text += " " + text;
-                        } else {
-                            currentItem = { type: 'narrator', text };
-                            blocks.push(currentItem);
-                        }
+                        currentDialogue = null;
+                        blocks.push({ type: 'narrator', text });
                     }
                 });
                 setCharacters([...foundChars].sort());
@@ -122,25 +114,34 @@
             };
 
             const playSegment = async (index) => {
-                if (index >= segments.length || !isPlaying || (!isUnlocked && totalSeconds >= TRIAL_LIMIT)) {
+                if (!isPlayingRef.current || index >= segments.length) {
                     if (index >= segments.length) setIsPlaying(false);
                     return;
                 }
+
+                // Hard limit check
+                if (!isUnlocked && totalSeconds >= TRIAL_LIMIT) {
+                    stopAudio(); setShowPaywall(true); return;
+                }
+
                 setCurrentIdx(index);
                 const seg = segments[index];
                 const voice = seg.type === 'narrator' ? voiceMap.Narrator : (voiceMap[seg.character] || "Abby");
+                
                 try {
                     const buffer = await fetchAudio(seg.text, voice);
+                    if (!isPlayingRef.current) return;
                     const source = audioContext.current.createBufferSource();
                     source.buffer = buffer;
                     source.connect(audioContext.current.destination);
                     source.onended = () => {
                         setTotalSeconds(prev => prev + buffer.duration);
-                        if (isPlaying) playSegment(index + 1);
+                        activeSource.current = null;
+                        if (isPlayingRef.current) playSegment(index + 1);
                     };
                     activeSource.current = source;
                     source.start();
-                } catch (e) { if(isPlaying) playSegment(index + 1); }
+                } catch (e) { if(isPlayingRef.current) playSegment(index + 1); }
             };
 
             const masterAndExport = async () => {
@@ -165,8 +166,7 @@
                     link.href = URL.createObjectURL(new Blob([wavData], { type: 'audio/wav' }));
                     link.download = "Scriptread_Master.wav";
                     link.click();
-                    setStatus("COMPLETE");
-                } catch (e) { setStatus("ERROR"); }
+                } catch (e) { setStatus("EXPORT ERROR"); }
                 setIsExporting(false);
             };
 
@@ -187,18 +187,22 @@
                 return view.buffer;
             };
 
-            useEffect(() => {
-                if (isPlaying) playSegment(currentIdx === -1 ? 0 : currentIdx);
-                else stopAudio();
-            }, [isPlaying]);
+            const togglePlay = () => {
+                if (isPlaying) { stopAudio(); }
+                else {
+                    if (audioContext.current.state === 'suspended') audioContext.current.resume();
+                    isPlayingRef.current = true; setIsPlaying(true);
+                    playSegment(currentIdx === -1 ? 0 : currentIdx);
+                }
+            };
 
             return (
                 <div className="flex flex-col h-screen relative">
                     {showPaywall && (
                         <div className="paywall-overlay">
                             <div className="max-w-md w-full border-[8px] border-black bg-white p-8 shadow-[15px_15px_0px_0px_rgba(0,0,0,1)] text-center">
-                                <h2 className="text-3xl font-black uppercase mb-4 italic tracking-tighter italic">Like what you hear?</h2>
-                                <p className="font-bold text-sm mb-8 leading-tight uppercase italic">Please contribute to the cost of these excellent professional voices to unlock the full script.</p>
+                                <h2 className="text-3xl font-black uppercase mb-4 italic tracking-tighter">Like what you hear?</h2>
+                                <p className="font-bold text-sm mb-8 leading-tight uppercase italic">Please contribute to the cost of these professional voices to unlock the full script.</p>
                                 <div id="paypal-btn" className="mb-6 min-h-[50px]"></div>
                                 <div className="border-t-2 border-black pt-4 flex gap-2">
                                     <input type="password" value={unlockCode} onChange={(e) => setUnlockCode(e.target.value)} placeholder="CODE" className="flex-1 border-4 border-black p-2 text-xs font-black outline-none uppercase" />
@@ -213,8 +217,8 @@
                         <h1 className="text-2xl font-black uppercase tracking-tighter italic">Scriptread</h1>
                         <div className="flex gap-3">
                             {!isUnlocked && <div className="text-[10px] font-black px-2 py-2 bg-yellow-400 border-2 border-black uppercase tracking-tighter">Trial: {Math.round(totalSeconds)}s / 30s</div>}
-                            <button onClick={masterAndExport} className="px-4 py-2 border-4 border-black font-black text-[10px] hover:bg-black hover:text-white transition-all uppercase tracking-tighter">{isExporting ? `${exportProgress}%` : "Master & Export"}</button>
-                            <label className="px-4 py-2 bg-black text-white font-black text-[10px] cursor-pointer hover:invert border-2 border-black transition-all uppercase tracking-tighter">Load PDF <input type="file" className="hidden" accept=".pdf" onChange={(e) => {
+                            <button onClick={masterAndExport} className="px-4 py-2 border-4 border-black font-black text-[10px] hover:bg-black hover:text-white transition-all uppercase">{isExporting ? `${exportProgress}%` : "Master & Export"}</button>
+                            <label className="px-4 py-2 bg-black text-white font-black text-[10px] cursor-pointer hover:invert border-2 border-black transition-all uppercase">Load PDF <input type="file" className="hidden" accept=".pdf" onChange={(e) => {
                                 const file = e.target.files[0]; if (!file) return; stopAudio(); const reader = new FileReader();
                                 reader.onload = async () => {
                                     const pdf = await window.pdfjsLib.getDocument({ data: reader.result }).promise;
@@ -256,16 +260,16 @@
                         <main className="flex-1 p-8 overflow-y-auto bg-white custom-scrollbar pb-32">
                             {segments.map((seg, i) => (
                                 <div key={i} className={`p-6 border-2 mb-4 transition-all ${currentIdx === i ? 'bg-black text-white scale-[1.01]' : 'border-black opacity-30'}`}>
-                                    {seg.type === 'dialogue' && <p className={`text-[10px] font-black uppercase mb-1 ${currentIdx === i ? 'text-gray-300' : 'text-gray-500'}`}>{seg.character}</p>}
+                                    {seg.type === 'dialogue' && <p className="text-[10px] font-black uppercase mb-1">{seg.character}</p>}
                                     <p className="text-sm font-bold uppercase leading-tight">{seg.text}</p>
                                 </div>
                             ))}
                         </main>
                     </div>
 
-                    <footer className="shrink-0 border-t-4 border-black p-6 bg-white flex justify-center items-center gap-10 shadow-[0_-4px_10px_rgba(0,0,0,0.1)]">
+                    <footer className="shrink-0 border-t-4 border-black p-6 bg-white flex justify-center items-center gap-10 shadow-[0_-4px_10px_rgba(0,0,0,1)]">
                         <button onClick={() => { stopAudio(); setCurrentIdx(Math.max(0, currentIdx - 1)); }}><svg width="32" height="32" viewBox="0 0 24 24" fill="black"><polygon points="11 19 2 12 11 5 11 19"/><polygon points="22 19 13 12 22 5 22 19"/></svg></button>
-                        <button onClick={() => { if (audioContext.current.state === 'suspended') audioContext.current.resume(); setIsPlaying(!isPlaying); }} className="bg-black text-white p-5 rounded-full shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all active:translate-y-1">
+                        <button onClick={togglePlay} className="bg-black text-white p-5 rounded-full shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all active:translate-y-1">
                             {isPlaying ? <svg width="32" height="32" viewBox="0 0 24 24" fill="white"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> : <svg width="32" height="32" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg>}
                         </button>
                         <button onClick={() => { stopAudio(); setCurrentIdx(Math.min(segments.length - 1, currentIdx + 1)); }}><svg width="32" height="32" viewBox="0 0 24 24" fill="black"><polygon points="13 19 22 12 13 5 13 19"/><polygon points="2 19 11 12 2 5 2 19"/></svg></button>
