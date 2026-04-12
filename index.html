@@ -40,9 +40,11 @@
             const [segments, setSegments] = useState([]);
             const [characters, setCharacters] = useState([]);
             const [voiceMap, setVoiceMap] = useState({ Narrator: "Selene" });
-            const [status, setStatus] = useState("READY");
+            const [status, setStatus] = useState("SYSTEM READY");
             const [isPlaying, setIsPlaying] = useState(false);
             const [currentIdx, setCurrentIdx] = useState(-1);
+            const [isExporting, setIsExporting] = useState(false);
+            const [exportProgress, setExportProgress] = useState(0);
             
             const audioContext = useRef(null);
             const activeSource = useRef(null);
@@ -63,7 +65,14 @@
                 lines.forEach(line => {
                     const text = line.text.trim();
                     const x = line.x;
-                    if (!text || text.match(/^\d+$/) || text.match(/PAGE\s+\d+/i)) return;
+                    
+                    // --- PAGE NUMBER & METADATA FILTER ---
+                    if (!text || 
+                        text.match(/^\d+$/) || 
+                        text.match(/^-?\s*\d+\s*-?$/) || 
+                        text.match(/^PAGE\s+\d+$/i) ||
+                        text.match(/^\d+\.$/)) return;
+
                     const isUppercase = text === text.toUpperCase();
                     const isCentered = x > 180 && text.length < 30;
 
@@ -90,7 +99,7 @@
             const handleFileUpload = async (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
-                setStatus("PARSING...");
+                setStatus("PARSING PDF...");
                 const arrayBuffer = await file.arrayBuffer();
                 const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
                 let positionalLines = [];
@@ -100,7 +109,7 @@
                     content.items.forEach(item => positionalLines.push({ text: item.str, x: item.transform[4] }));
                 }
                 parseScript(positionalLines);
-                setStatus("LOADED");
+                setStatus("READY TO PLAY");
             };
 
             const fetchAudio = async (text, voiceId) => {
@@ -122,7 +131,9 @@
                 const seg = segments[index];
                 const voice = seg.type === 'narrator' ? voiceMap.Narrator : voiceMap[seg.character];
                 const text = cleanText(seg.text);
-                if (!text) { playSegment(index + 1); return; }
+
+                if (!text || text.length < 2) { playSegment(index + 1); return; }
+
                 try {
                     const buffer = await fetchAudio(text, voice);
                     const source = audioContext.current.createBufferSource();
@@ -132,6 +143,75 @@
                     activeSource.current = source;
                     source.start();
                 } catch (e) { playSegment(index + 1); }
+            };
+
+            const masterAndExport = async () => {
+                if (segments.length === 0) return;
+                setIsExporting(true);
+                setExportProgress(0);
+                setStatus("MASTERING AUDIO...");
+
+                const buffers = [];
+                try {
+                    for (let i = 0; i < segments.length; i++) {
+                        setExportProgress(Math.round((i / segments.length) * 100));
+                        const seg = segments[i];
+                        const text = cleanText(seg.text);
+                        if (!text || text.length < 2) continue;
+                        
+                        const voice = seg.type === 'narrator' ? voiceMap.Narrator : voiceMap[seg.character];
+                        const buffer = await fetchAudio(text, voice);
+                        buffers.push(buffer);
+                    }
+
+                    const totalLength = buffers.reduce((acc, b) => acc + b.length, 0);
+                    const masterBuffer = audioContext.current.createBuffer(1, totalLength, 24000);
+                    const channelData = masterBuffer.getChannelData(0);
+                    let offset = 0;
+                    buffers.forEach(b => {
+                        channelData.set(b.getChannelData(0), offset);
+                        offset += b.length;
+                    });
+
+                    // WAV Encoding
+                    const wavData = encodeWav(masterBuffer);
+                    const blob = new Blob([wavData], { type: 'audio/wav' });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = "ScriptReadThrough_Master.wav";
+                    link.click();
+                    setStatus("EXPORT COMPLETE");
+                } catch (e) { setStatus("EXPORT FAILED"); }
+                setIsExporting(false);
+            };
+
+            const encodeWav = (buffer) => {
+                const length = buffer.length * 2;
+                const view = new DataView(new ArrayBuffer(44 + length));
+                const writeString = (o, s) => { for (let i=0; i<s.length; i++) view.setUint8(o+i, s.charCodeAt(i)); };
+                
+                writeString(0, 'RIFF');
+                view.setUint32(4, 36 + length, true);
+                writeString(8, 'WAVE');
+                writeString(12, 'fmt ');
+                view.setUint32(16, 16, true);
+                view.setUint16(20, 1, true);
+                view.setUint16(22, 1, true);
+                view.setUint32(24, 24000, true);
+                view.setUint32(28, 48000, true);
+                view.setUint16(32, 2, true);
+                view.setUint16(34, 16, true);
+                writeString(36, 'data');
+                view.setUint32(40, length, true);
+
+                const data = buffer.getChannelData(0);
+                let offset = 44;
+                for (let i=0; i<data.length; i++, offset+=2) {
+                    const s = Math.max(-1, Math.min(1, data[i]));
+                    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+                }
+                return view.buffer;
             };
 
             useEffect(() => {
@@ -149,11 +229,22 @@
 
             return (
                 <div className="flex flex-col h-screen overflow-hidden">
-                    <header className="border-b-4 border-black p-4 flex justify-between items-center bg-white shrink-0 z-10">
-                        <h1 className="text-2xl font-black uppercase tracking-tighter">Scriptread</h1>
-                        <label className="px-4 py-2 bg-black text-white font-black text-xs cursor-pointer hover:invert border-2 border-black transition-all">
-                            UPLOAD SCRIPT <input type="file" className="hidden" accept=".pdf" onChange={handleFileUpload} />
-                        </label>
+                    <header className="border-b-4 border-black p-4 flex justify-between items-center bg-white shrink-0 z-10 shadow-sm">
+                        <div className="flex items-center gap-4">
+                            <div className="bg-black text-white p-2 border-2 border-black">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+                            </div>
+                            <h1 className="text-2xl font-black uppercase tracking-tighter">Scriptread</h1>
+                        </div>
+                        <div className="flex gap-3">
+                            <button onClick={masterAndExport} disabled={isExporting} className="px-4 py-2 border-4 border-black font-black text-[10px] hover:bg-black hover:text-white transition-all flex items-center gap-2">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                {isExporting ? `${exportProgress}% MASTERING` : "MASTER & EXPORT"}
+                            </button>
+                            <label className="px-4 py-2 bg-black text-white font-black text-[10px] cursor-pointer hover:invert border-2 border-black transition-all">
+                                LOAD SCRIPT <input type="file" className="hidden" accept=".pdf" onChange={handleFileUpload} />
+                            </label>
+                        </div>
                     </header>
 
                     <div className="flex-1 flex overflow-hidden">
@@ -175,24 +266,25 @@
 
                         <main className="flex-1 p-8 overflow-y-auto bg-white custom-scrollbar pb-32">
                             {segments.map((seg, i) => (
-                                <div key={i} className={`p-6 border-2 mb-4 transition-all ${currentIdx === i ? 'bg-black text-white scale-[1.01]' : 'border-black opacity-40'}`}>
+                                <div key={i} className={`p-6 border-2 mb-4 transition-all ${currentIdx === i ? 'bg-black text-white scale-[1.01]' : 'border-black opacity-30'}`}>
                                     {seg.type === 'dialogue' && <p className={`text-[10px] font-black uppercase mb-1 ${currentIdx === i ? 'text-gray-300' : 'text-gray-500'}`}>{seg.character}</p>}
                                     <p className="text-sm font-bold uppercase leading-tight">{seg.text}</p>
                                 </div>
                             ))}
-                            {segments.length === 0 && <div className="h-full flex items-center justify-center text-gray-300 font-black uppercase tracking-widest">No Script Loaded</div>}
                         </main>
                     </div>
 
                     <footer className="shrink-0 border-t-4 border-black p-6 bg-white flex justify-between items-center z-10">
                         <div className="flex items-center gap-10 mx-auto">
-                            <button onClick={() => setCurrentIdx(Math.max(0, currentIdx - 1))} className="hover:scale-110"><svg width="32" height="32" viewBox="0 0 24 24" fill="black"><polygon points="11 19 2 12 11 5 11 19"/><polygon points="22 19 13 12 22 5 22 19"/></svg></button>
+                            <button onClick={() => setCurrentIdx(Math.max(0, currentIdx - 1))}><svg width="32" height="32" viewBox="0 0 24 24" fill="black"><polygon points="11 19 2 12 11 5 11 19"/><polygon points="22 19 13 12 22 5 22 19"/></svg></button>
                             <button onClick={() => { if (audioContext.current.state === 'suspended') audioContext.current.resume(); setIsPlaying(!isPlaying); }} className="bg-black text-white p-4 rounded-full hover:scale-105 transition-all">
                                 {isPlaying ? <svg width="32" height="32" viewBox="0 0 24 24" fill="white"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> : <svg width="32" height="32" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg>}
                             </button>
-                            <button onClick={() => setCurrentIdx(Math.min(segments.length - 1, currentIdx + 1))} className="hover:scale-110"><svg width="32" height="32" viewBox="0 0 24 24" fill="black"><polygon points="13 19 22 12 13 5 13 19"/><polygon points="2 19 11 12 2 5 2 19"/></svg></button>
+                            <button onClick={() => setCurrentIdx(Math.min(segments.length - 1, currentIdx + 1))}><svg width="32" height="32" viewBox="0 0 24 24" fill="black"><polygon points="13 19 22 12 13 5 13 19"/><polygon points="2 19 11 12 2 5 2 19"/></svg></button>
                         </div>
-                        <div className="font-black text-[10px] uppercase absolute right-6 tracking-widest hidden md:block">Status: {status}</div>
+                        <div className="font-black text-[10px] uppercase absolute right-6 tracking-widest hidden md:block">
+                            {isExporting ? `MASTERING... ${exportProgress}%` : `Status: ${status}`}
+                        </div>
                     </footer>
                 </div>
             );
