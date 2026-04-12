@@ -1,11 +1,9 @@
 {
-  "name": "frank-script-reader",
+  "name": "frank-reader",
   "version": "1.0.0",
-  "private": true,
+  "description": "Static Server for Frank",
+  "main": "index.html",
   "scripts": {
     "start": "npx serve ."
-  },
-  "dependencies": {
-    "serve": "^14.2.0"
   }
 }
