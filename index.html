@@ -15,7 +15,7 @@
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: black; }
         select { appearance: none; background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%223%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M6%209l6%206%206-6%22%3E%3C%2Fpath%3E%3C%2Fsvg%3E"); background-repeat: no-repeat; background-position: right 0.75rem center; }
-        .paywall-overlay { backdrop-filter: blur(12px); background: rgba(255,255,255,0.85); z-index: 9999; }
+        .paywall-lock { backdrop-filter: blur(20px); background: rgba(255,255,255,0.9); z-index: 10000; }
     </style>
 </head>
 <body class="bg-white text-black h-screen overflow-hidden">
@@ -36,7 +36,6 @@
             const [voiceMap, setVoiceMap] = useState({ Narrator: "Selene" });
             const [isPlaying, setIsPlaying] = useState(false);
             const [currentIdx, setCurrentIdx] = useState(-1);
-            const [status, setStatus] = useState("READY");
             
             const [isUnlocked, setIsUnlocked] = useState(false);
             const [totalSecondsRead, setTotalSecondsRead] = useState(0);
@@ -53,20 +52,23 @@
                 audioContext.current = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
             }, []);
 
+            // HARD MASTER KILL
             const stopEverything = () => {
+                setIsPlaying(false);
                 if (activeSource.current) {
-                    activeSource.current.onended = null; 
-                    activeSource.current.stop();
+                    activeSource.current.onended = null;
+                    try { activeSource.current.stop(); } catch(e) {}
                     activeSource.current = null;
                 }
-                setIsPlaying(false);
+                // Suspend context to force silence
+                if (audioContext.current) audioContext.current.suspend();
             };
 
             const checkUnlock = () => {
                 if (unlockCode.toLowerCase() === "frank2026") {
                     setIsUnlocked(true);
                     setShowPaywall(false);
-                    setStatus("PRO UNLOCKED");
+                    if (audioContext.current) audioContext.current.resume();
                 }
             };
 
@@ -98,7 +100,6 @@
                 const file = e.target.files[0];
                 if (!file) return;
                 stopEverything();
-                setStatus("PARSING...");
                 const arrayBuffer = await file.arrayBuffer();
                 const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
                 let positionalLines = [];
@@ -110,18 +111,18 @@
                 parseScript(positionalLines);
                 setCurrentIdx(-1);
                 setTotalSecondsRead(0);
-                setStatus("LOADED");
+                if (audioContext.current) audioContext.current.resume();
             };
 
             const playSegment = async (index) => {
-                if (index >= segments.length) { stopEverything(); return; }
-                
-                // HARD STOP CHECK
+                // Ensure we haven't hit the trial limit
                 if (!isUnlocked && totalSecondsRead >= TRIAL_LIMIT) {
                     stopEverything();
                     setShowPaywall(true);
                     return;
                 }
+
+                if (index >= segments.length || !isPlaying) return;
 
                 setCurrentIdx(index);
                 const seg = segments[index];
@@ -142,6 +143,13 @@
                     for (let i = 0; i < binStr.length; i++) bytes[i] = binStr.charCodeAt(i);
                     const buffer = await audioContext.current.decodeAudioData(bytes.buffer);
 
+                    // Re-check limit just before playing
+                    if (!isUnlocked && totalSecondsRead >= TRIAL_LIMIT) {
+                        stopEverything();
+                        setShowPaywall(true);
+                        return;
+                    }
+
                     const source = audioContext.current.createBufferSource();
                     source.buffer = buffer;
                     source.connect(audioContext.current.destination);
@@ -149,12 +157,12 @@
                     source.onended = () => {
                         setTotalSecondsRead(prev => prev + buffer.duration);
                         activeSource.current = null;
-                        playSegment(index + 1);
+                        if (isPlaying) playSegment(index + 1);
                     };
 
                     activeSource.current = source;
                     source.start();
-                } catch (e) { playSegment(index + 1); }
+                } catch (e) { if(isPlaying) playSegment(index + 1); }
             };
 
             const togglePlay = () => {
@@ -163,9 +171,13 @@
                 } else {
                     if (audioContext.current.state === 'suspended') audioContext.current.resume();
                     setIsPlaying(true);
-                    playSegment(currentIdx === -1 ? 0 : currentIdx);
                 }
             };
+
+            // This watcher handles the "next" call when isPlaying state toggles
+            useEffect(() => {
+                if (isPlaying) playSegment(currentIdx === -1 ? 0 : currentIdx);
+            }, [isPlaying]);
 
             const VoiceList = () => (
                 <>
@@ -176,20 +188,20 @@
             );
 
             return (
-                <div className="flex flex-col h-screen bg-white">
+                <div className="flex flex-col h-screen bg-white relative">
+                    {/* PAYWALL POPUP */}
                     {showPaywall && (
-                        <div className="fixed inset-0 paywall-overlay flex items-center justify-center p-6 z-[9999]">
+                        <div className="fixed inset-0 paywall-lock flex items-center justify-center p-6">
                             <div className="max-w-md w-full border-[8px] border-black bg-white p-8 shadow-[15px_15px_0px_0px_rgba(0,0,0,1)] text-center">
                                 <h2 className="text-3xl font-black uppercase mb-4 italic">Like what you hear?</h2>
                                 <p className="font-bold text-sm mb-8 leading-tight uppercase">Contribute to the cost of these excellent professional voices to unlock the full script.</p>
                                 <input type="password" value={unlockCode} onChange={(e) => setUnlockCode(e.target.value)} placeholder="ENTER UNLOCK CODE" className="w-full border-4 border-black p-3 text-sm font-black outline-none mb-4" />
-                                <button onClick={checkUnlock} className="w-full bg-black text-white py-4 font-black uppercase text-sm mb-4">Unlock Full Access</button>
-                                <button onClick={() => setShowPaywall(false)} className="text-[10px] font-black uppercase underline">Close Trial</button>
+                                <button onClick={checkUnlock} className="w-full bg-black text-white py-4 font-black uppercase text-sm">Unlock Full Access</button>
                             </div>
                         </div>
                     )}
 
-                    <header className="border-b-4 border-black p-4 flex justify-between items-center shrink-0">
+                    <header className="border-b-4 border-black p-4 flex justify-between items-center bg-white shrink-0 z-10">
                         <h1 className="text-2xl font-black uppercase tracking-tighter italic">Scriptread</h1>
                         <div className="flex gap-4 items-center">
                             {!isUnlocked && <div className="text-[10px] font-black px-2 py-1 bg-yellow-400 border-2 border-black uppercase">Trial: {Math.round(totalSecondsRead)}s / 30s</div>}
@@ -207,7 +219,7 @@
                                 </div>
                                 {characters.map(char => (
                                     <div key={char} className="p-2 border-2 border-black bg-white">
-                                        <p className="text-[9px] font-black uppercase tracking-tight">{char}</p>
+                                        <p className="text-[9px] font-black uppercase">{char}</p>
                                         <select value={voiceMap[char] || "Abby"} onChange={(e) => setVoiceMap({...voiceMap, [char]: e.target.value})} className="w-full text-[10px] font-bold outline-none"><VoiceList /></select>
                                     </div>
                                 ))}
@@ -226,7 +238,7 @@
 
                     <footer className="shrink-0 border-t-4 border-black p-6 bg-white flex justify-center items-center gap-10">
                         <button onClick={() => { stopEverything(); setCurrentIdx(Math.max(0, currentIdx - 1)); }}><svg width="32" height="32" viewBox="0 0 24 24" fill="black"><polygon points="11 19 2 12 11 5 11 19"/><polygon points="22 19 13 12 22 5 22 19"/></svg></button>
-                        <button onClick={togglePlay} className="bg-black text-white p-5 rounded-full shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+                        <button onClick={togglePlay} className="bg-black text-white p-5 rounded-full shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all active:translate-y-1">
                             {isPlaying ? <svg width="32" height="32" viewBox="0 0 24 24" fill="white"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> : <svg width="32" height="32" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg>}
                         </button>
                         <button onClick={() => { stopEverything(); setCurrentIdx(Math.min(segments.length - 1, currentIdx + 1)); }}><svg width="32" height="32" viewBox="0 0 24 24" fill="black"><polygon points="13 19 22 12 13 5 13 19"/><polygon points="2 19 11 12 2 5 2 19"/></svg></button>
