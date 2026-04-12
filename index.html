@@ -15,7 +15,22 @@
         body { font-family: 'Space+Mono', monospace; overflow: hidden; height: 100vh; background: #fff; }
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: black; }
-        select { appearance: none; background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%223%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M6%209l6%206%206-6%22%3E%3C%2Fpath%3E%3C%2Fsvg%3E"); background-repeat: no-repeat; background-position: right 0.75rem center; }
+        
+        /* UI FIX: Ensure dropdowns behave and stay within view */
+        select { 
+            appearance: none; 
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%223%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M6%209l6%206%206-6%22%3E%3C%2Fpath%3E%3C%2Fsvg%3E"); 
+            background-repeat: no-repeat; 
+            background-position: right 0.5rem center;
+            padding-right: 1.5rem;
+        }
+        
+        /* Force dropdowns to open downwards and handle long lists */
+        select option {
+            background: white;
+            color: black;
+        }
+
         .paywall-overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.95); backdrop-filter: blur(10px); z-index: 10000; display: flex; align-items: center; justify-content: center; }
     </style>
 </head>
@@ -94,7 +109,6 @@
                     const text = line.text.trim();
                     const x = line.x;
 
-                    // --- STRICT PAGE NUMBER FILTER ---
                     const isPageNum = 
                         text.match(/^\d+$/) || 
                         text.match(/^PAGE\s+\d+$/i) || 
@@ -108,7 +122,6 @@
 
                     if (isCentered) {
                         const name = text.replace(/\([^)]*\)/g, "").trim();
-                        // Double check the name itself isn't a number (ghost page numbers)
                         if (!name.match(/^\d+$/)) {
                             foundChars.add(name);
                             currentDialogue = { type: 'dialogue', character: name, text: "" };
@@ -230,7 +243,7 @@
                     {showPaywall && (
                         <div className="paywall-overlay">
                             <div className="max-w-md w-full border-[8px] border-black bg-white p-8 shadow-[15px_15px_0px_0px_rgba(0,0,0,1)] text-center">
-                                <h2 className="text-3xl font-black uppercase mb-4 italic italic tracking-tighter">Like what you hear?</h2>
+                                <h2 className="text-3xl font-black uppercase mb-4 italic tracking-tighter">Like what you hear?</h2>
                                 <p className="font-bold text-sm mb-8 leading-tight uppercase italic">Please contribute to the cost of these excellent professional voices to unlock the full script.</p>
                                 <div id="paypal-btn" className="mb-6 min-h-[50px]"></div>
                                 <div className="border-t-2 border-black pt-4 flex gap-2">
@@ -264,22 +277,19 @@
 
                     <div className="flex-1 flex overflow-hidden">
                         <aside className="w-64 border-r-4 border-black bg-gray-50 overflow-y-auto shrink-0 custom-scrollbar">
-                            <div className="p-2 bg-black text-white font-black text-[10px] uppercase italic text-center tracking-widest">Cast Assignments</div>
-                            <div className="p-4 space-y-4">
+                            <div className="p-2 bg-black text-white font-black text-[10px] uppercase italic text-center tracking-widest sticky top-0 z-20">Cast Assignments</div>
+                            <div className="p-4 space-y-4 pt-4">
                                 <div className="p-2 border-2 border-black bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
                                     <p className="text-[9px] font-black text-gray-400 uppercase">Narrator</p>
-                                    <select value={voiceMap.Narrator} onChange={(e) => setVoiceMap({...voiceMap, Narrator: e.target.value})} className="w-full text-[10px] font-bold outline-none">
-                                        <optgroup label="Narrators">{INWORLD_VOICES.narrators.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
-                                        <optgroup label="Female">{INWORLD_VOICES.female.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
-                                        <optgroup label="Male">{INWORLD_VOICES.male.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
+                                    <select className="w-full text-[10px] font-bold outline-none cursor-pointer" value={voiceMap.Narrator} onChange={(e) => setVoiceMap({...voiceMap, Narrator: e.target.value})}>
+                                        <VoiceList />
                                     </select>
                                 </div>
                                 {characters.map(char => (
                                     <div key={char} className="p-2 border-2 border-black bg-white">
                                         <p className="text-[9px] font-black uppercase tracking-tight">{char}</p>
-                                        <select value={voiceMap[char] || "Abby"} onChange={(e) => setVoiceMap({...voiceMap, [char]: e.target.value})} className="w-full text-[10px] font-bold outline-none">
-                                            <optgroup label="Female">{INWORLD_VOICES.female.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
-                                            <optgroup label="Male">{INWORLD_VOICES.male.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
+                                        <select className="w-full text-[10px] font-bold outline-none cursor-pointer" value={voiceMap[char] || "Abby"} onChange={(e) => setVoiceMap({...voiceMap, [char]: e.target.value})}>
+                                            <VoiceList />
                                         </select>
                                     </div>
                                 ))}
