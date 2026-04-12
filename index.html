@@ -9,6 +9,7 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <script src="https://www.paypal.com/sdk/js?client-id=BAAK4FNNEoRhK_jriVX-V3QO-iWVuGEuUdAmvgVHX6pluidxESAwHaGB_fm7WGrOSxe-6VcmE6xZvnvdjU&components=hosted-buttons&disable-funding=venmo&currency=CAD"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
         body { font-family: 'Space+Mono', monospace; overflow: hidden; height: 100vh; }
@@ -36,6 +37,7 @@
             const [voiceMap, setVoiceMap] = useState({ Narrator: "Selene" });
             const [isPlaying, setIsPlaying] = useState(false);
             const [currentIdx, setCurrentIdx] = useState(-1);
+            const [status, setStatus] = useState("READY");
             
             const [isUnlocked, setIsUnlocked] = useState(false);
             const [totalSecondsRead, setTotalSecondsRead] = useState(0);
@@ -45,6 +47,9 @@
 
             const audioContext = useRef(null);
             const activeSource = useRef(null);
+            const isPlayingRef = useRef(false);
+            const currentIdxRef = useRef(-1);
+
             const API_KEY = "NDJKcTE4NWZnTG8wOW9Gd3BVWWhhTW9pWlU4dTJ3NU46NE8wenZzV2drTjhRRjlJZVl6aldhZ0lWS0VCYlpFckl5RWJ1a2tTd3Fwb2pVT1BGMGN2OVg4TERtQ1dHWFZ2Yw==";
 
             useEffect(() => {
@@ -52,23 +57,33 @@
                 audioContext.current = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
             }, []);
 
-            // HARD MASTER KILL
-            const stopEverything = () => {
-                setIsPlaying(false);
+            // PAYPAL INITIALIZATION
+            useEffect(() => {
+                if (showPaywall && window.paypal) {
+                    window.paypal.HostedButtons({
+                        hostedButtonId: "PASTE_YOUR_HOSTED_BUTTON_ID_HERE", // Look in your PayPal code for the 'hosted-button-id'
+                        onApprove: (data, actions) => {
+                            setIsUnlocked(true);
+                            setShowPaywall(false);
+                            setStatus("PAYMENT SUCCESSFUL");
+                        }
+                    }).render("#paypal-button-container");
+                }
+            }, [showPaywall]);
+
+            const stopAudio = () => {
                 if (activeSource.current) {
                     activeSource.current.onended = null;
                     try { activeSource.current.stop(); } catch(e) {}
                     activeSource.current = null;
                 }
-                // Suspend context to force silence
-                if (audioContext.current) audioContext.current.suspend();
             };
 
             const checkUnlock = () => {
                 if (unlockCode.toLowerCase() === "frank2026") {
                     setIsUnlocked(true);
                     setShowPaywall(false);
-                    if (audioContext.current) audioContext.current.resume();
+                    setStatus("PRO UNLOCKED");
                 }
             };
 
@@ -99,7 +114,9 @@
             const handleFileUpload = async (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
-                stopEverything();
+                setIsPlaying(false);
+                isPlayingRef.current = false;
+                stopAudio();
                 const arrayBuffer = await file.arrayBuffer();
                 const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
                 let positionalLines = [];
@@ -110,27 +127,26 @@
                 }
                 parseScript(positionalLines);
                 setCurrentIdx(-1);
+                currentIdxRef.current = -1;
                 setTotalSecondsRead(0);
-                if (audioContext.current) audioContext.current.resume();
+                setStatus("LOADED");
             };
 
             const playSegment = async (index) => {
-                // Ensure we haven't hit the trial limit
+                if (!isPlayingRef.current || index >= segments.length) return;
                 if (!isUnlocked && totalSecondsRead >= TRIAL_LIMIT) {
-                    stopEverything();
+                    setIsPlaying(false);
+                    isPlayingRef.current = false;
                     setShowPaywall(true);
+                    stopAudio();
                     return;
                 }
-
-                if (index >= segments.length || !isPlaying) return;
-
                 setCurrentIdx(index);
+                currentIdxRef.current = index;
                 const seg = segments[index];
                 const voice = seg.type === 'narrator' ? voiceMap.Narrator : voiceMap[seg.character];
                 const text = seg.text.replace(/\([^)]*\)/g, "").trim();
-
                 if (!text || text.length < 2) { playSegment(index + 1); return; }
-
                 try {
                     const response = await fetch("https://api.inworld.ai/tts/v1/voice", {
                         method: "POST",
@@ -142,42 +158,31 @@
                     const bytes = new Uint8Array(binStr.length);
                     for (let i = 0; i < binStr.length; i++) bytes[i] = binStr.charCodeAt(i);
                     const buffer = await audioContext.current.decodeAudioData(bytes.buffer);
-
-                    // Re-check limit just before playing
-                    if (!isUnlocked && totalSecondsRead >= TRIAL_LIMIT) {
-                        stopEverything();
-                        setShowPaywall(true);
-                        return;
-                    }
-
+                    if (!isPlayingRef.current) return;
                     const source = audioContext.current.createBufferSource();
                     source.buffer = buffer;
                     source.connect(audioContext.current.destination);
-                    
                     source.onended = () => {
                         setTotalSecondsRead(prev => prev + buffer.duration);
                         activeSource.current = null;
-                        if (isPlaying) playSegment(index + 1);
+                        if (isPlayingRef.current) playSegment(index + 1);
                     };
-
                     activeSource.current = source;
                     source.start();
-                } catch (e) { if(isPlaying) playSegment(index + 1); }
+                } catch (e) { if (isPlayingRef.current) playSegment(index + 1); }
             };
 
             const togglePlay = () => {
-                if (isPlaying) {
-                    stopEverything();
-                } else {
+                const newState = !isPlaying;
+                setIsPlaying(newState);
+                isPlayingRef.current = newState;
+                if (newState) {
                     if (audioContext.current.state === 'suspended') audioContext.current.resume();
-                    setIsPlaying(true);
+                    playSegment(currentIdx === -1 ? 0 : currentIdx);
+                } else {
+                    stopAudio();
                 }
             };
-
-            // This watcher handles the "next" call when isPlaying state toggles
-            useEffect(() => {
-                if (isPlaying) playSegment(currentIdx === -1 ? 0 : currentIdx);
-            }, [isPlaying]);
 
             const VoiceList = () => (
                 <>
@@ -188,38 +193,47 @@
             );
 
             return (
-                <div className="flex flex-col h-screen bg-white relative">
-                    {/* PAYWALL POPUP */}
+                <div className="flex flex-col h-screen bg-white relative font-mono">
                     {showPaywall && (
-                        <div className="fixed inset-0 paywall-lock flex items-center justify-center p-6">
+                        <div className="fixed inset-0 paywall-lock flex items-center justify-center p-6 z-[10000]">
                             <div className="max-w-md w-full border-[8px] border-black bg-white p-8 shadow-[15px_15px_0px_0px_rgba(0,0,0,1)] text-center">
-                                <h2 className="text-3xl font-black uppercase mb-4 italic">Like what you hear?</h2>
-                                <p className="font-bold text-sm mb-8 leading-tight uppercase">Contribute to the cost of these excellent professional voices to unlock the full script.</p>
-                                <input type="password" value={unlockCode} onChange={(e) => setUnlockCode(e.target.value)} placeholder="ENTER UNLOCK CODE" className="w-full border-4 border-black p-3 text-sm font-black outline-none mb-4" />
-                                <button onClick={checkUnlock} className="w-full bg-black text-white py-4 font-black uppercase text-sm">Unlock Full Access</button>
+                                <h2 className="text-3xl font-black uppercase mb-4 italic tracking-tighter">Like what you hear?</h2>
+                                <p className="font-bold text-sm mb-6 leading-tight uppercase">Contribute to the cost of these professional voices to unlock the full script.</p>
+                                
+                                {/* PayPal Button Container */}
+                                <div id="paypal-button-container" className="mb-6 min-h-[50px]"></div>
+
+                                <div className="border-t-2 border-dashed border-black pt-6">
+                                    <p className="text-[10px] font-black uppercase mb-2">Already have a code?</p>
+                                    <div className="flex gap-2">
+                                        <input type="password" value={unlockCode} onChange={(e) => setUnlockCode(e.target.value)} placeholder="ENTER CODE" className="flex-1 border-4 border-black p-2 text-xs font-bold outline-none uppercase" />
+                                        <button onClick={checkUnlock} className="bg-black text-white px-4 font-black text-xs uppercase hover:invert transition-all">Unlock</button>
+                                    </div>
+                                </div>
+                                <button onClick={() => setShowPaywall(false)} className="mt-6 text-[10px] font-black uppercase underline">Maybe Later</button>
                             </div>
                         </div>
                     )}
 
-                    <header className="border-b-4 border-black p-4 flex justify-between items-center bg-white shrink-0 z-10">
+                    <header className="border-b-4 border-black p-4 flex justify-between items-center bg-white shrink-0 z-10 shadow-sm">
                         <h1 className="text-2xl font-black uppercase tracking-tighter italic">Scriptread</h1>
                         <div className="flex gap-4 items-center">
-                            {!isUnlocked && <div className="text-[10px] font-black px-2 py-1 bg-yellow-400 border-2 border-black uppercase">Trial: {Math.round(totalSecondsRead)}s / 30s</div>}
+                            {!isUnlocked && <div className="text-[10px] font-black px-2 py-1 bg-yellow-400 border-2 border-black uppercase tracking-tighter">Trial: {Math.round(totalSecondsRead)}s / 30s</div>}
                             <label className="px-4 py-2 bg-black text-white font-black text-xs cursor-pointer border-2 border-black uppercase">Load PDF <input type="file" className="hidden" accept=".pdf" onChange={handleFileUpload} /></label>
                         </div>
                     </header>
 
                     <div className="flex-1 flex overflow-hidden">
-                        <aside className="w-64 border-r-4 border-black bg-gray-50 overflow-y-auto shrink-0">
-                            <div className="p-2 bg-black text-white font-black text-[10px] uppercase">Cast</div>
+                        <aside className="w-64 border-r-4 border-black bg-gray-50 overflow-y-auto shrink-0 custom-scrollbar">
+                            <div className="p-2 bg-black text-white font-black text-[10px] uppercase italic tracking-widest text-center">Cast</div>
                             <div className="p-4 space-y-4">
-                                <div className="p-2 border-2 border-black bg-white">
+                                <div className="p-2 border-2 border-black bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
                                     <p className="text-[9px] font-black text-gray-400 uppercase">Narrator</p>
                                     <select value={voiceMap.Narrator} onChange={(e) => setVoiceMap({...voiceMap, Narrator: e.target.value})} className="w-full text-[10px] font-bold outline-none"><VoiceList /></select>
                                 </div>
                                 {characters.map(char => (
                                     <div key={char} className="p-2 border-2 border-black bg-white">
-                                        <p className="text-[9px] font-black uppercase">{char}</p>
+                                        <p className="text-[9px] font-black uppercase tracking-tight">{char}</p>
                                         <select value={voiceMap[char] || "Abby"} onChange={(e) => setVoiceMap({...voiceMap, [char]: e.target.value})} className="w-full text-[10px] font-bold outline-none"><VoiceList /></select>
                                     </div>
                                 ))}
@@ -237,11 +251,11 @@
                     </div>
 
                     <footer className="shrink-0 border-t-4 border-black p-6 bg-white flex justify-center items-center gap-10">
-                        <button onClick={() => { stopEverything(); setCurrentIdx(Math.max(0, currentIdx - 1)); }}><svg width="32" height="32" viewBox="0 0 24 24" fill="black"><polygon points="11 19 2 12 11 5 11 19"/><polygon points="22 19 13 12 22 5 22 19"/></svg></button>
-                        <button onClick={togglePlay} className="bg-black text-white p-5 rounded-full shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all active:translate-y-1">
+                        <button onClick={() => { stopAudio(); const next = Math.max(0, currentIdx - 1); setCurrentIdx(next); currentIdxRef.current = next; }}><svg width="32" height="32" viewBox="0 0 24 24" fill="black"><polygon points="11 19 2 12 11 5 11 19"/><polygon points="22 19 13 12 22 5 22 19"/></svg></button>
+                        <button onClick={togglePlay} className="bg-black text-white p-5 rounded-full shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-y-1 transition-all">
                             {isPlaying ? <svg width="32" height="32" viewBox="0 0 24 24" fill="white"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> : <svg width="32" height="32" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg>}
                         </button>
-                        <button onClick={() => { stopEverything(); setCurrentIdx(Math.min(segments.length - 1, currentIdx + 1)); }}><svg width="32" height="32" viewBox="0 0 24 24" fill="black"><polygon points="13 19 22 12 13 5 13 19"/><polygon points="2 19 11 12 2 5 2 19"/></svg></button>
+                        <button onClick={() => { stopAudio(); const next = Math.min(segments.length - 1, currentIdx + 1); setCurrentIdx(next); currentIdxRef.current = next; }}><svg width="32" height="32" viewBox="0 0 24 24" fill="black"><polygon points="13 19 22 12 13 5 13 19"/><polygon points="2 19 11 12 2 5 2 19"/></svg></button>
                     </footer>
                 </div>
             );
