@@ -15,18 +15,13 @@
         body { font-family: 'Space+Mono', monospace; overflow: hidden; height: 100vh; background: #fff; }
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: black; }
-        
-        /* UI FIX: Ensure dropdowns stay contained and scrollable */
         select { 
             appearance: none; 
             background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%223%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M6%209l6%206%206-6%22%3E%3C%2Fpath%3E%3C%2Fsvg%3E"); 
             background-repeat: no-repeat; 
             background-position: right 0.5rem center; 
             padding-right: 1.5rem;
-            max-height: 40px;
         }
-
-        /* Paywall styling */
         .paywall-overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.95); backdrop-filter: blur(10px); z-index: 10000; display: flex; align-items: center; justify-content: center; }
     </style>
 </head>
@@ -67,6 +62,13 @@
             }, []);
 
             useEffect(() => {
+                if (!isUnlocked && totalSeconds >= TRIAL_LIMIT) {
+                    stopAudio();
+                    setShowPaywall(true);
+                }
+            }, [totalSeconds, isUnlocked]);
+
+            useEffect(() => {
                 if (showPaywall && window.paypal) {
                     const btn = document.getElementById('paypal-btn-container');
                     if (btn) btn.innerHTML = '';
@@ -90,22 +92,12 @@
             const parseScript = (lines) => {
                 const finalBlocks = [];
                 const foundChars = new Set();
-                let currentNarratorBlock = "";
-                let currentDialogueChar = null;
-                let currentDialogueText = "";
+                let currentActionText = "";
 
-                const flushNarrator = () => {
-                    if (currentNarratorBlock.trim()) {
-                        finalBlocks.push({ type: 'narrator', text: currentNarratorBlock.trim() });
-                        currentNarratorBlock = "";
-                    }
-                };
-
-                const flushDialogue = () => {
-                    if (currentDialogueChar && currentDialogueText.trim()) {
-                        finalBlocks.push({ type: 'dialogue', character: currentDialogueChar, text: currentDialogueText.trim() });
-                        currentDialogueChar = null;
-                        currentDialogueText = "";
+                const flushAction = () => {
+                    if (currentActionText.trim()) {
+                        finalBlocks.push({ type: 'narrator', text: currentActionText.trim() });
+                        currentActionText = "";
                     }
                 };
 
@@ -113,35 +105,45 @@
                     let text = line.text.trim();
                     const x = line.x;
 
+                    // FILTER PAGE NUMBERS
                     const isPageNum = text.match(/^\d+$/) || text.match(/^PAGE\s+\d+$/i) || text.match(/^\d+\s*\.$/);
                     if (!text || isPageNum) return;
 
-                    text = text.replace(/\bINT\b\.?/gi, "Interior").replace(/\bEXT\b\.?/gi, "Exterior");
+                    // STRIP PARENTHETICALS FROM READING
+                    text = text.replace(/\([^)]*\)/g, "").trim();
+                    if (!text) return;
+
+                    // TEXT EXPANSION
+                    const expandedText = text.replace(/\bINT\b\.?/gi, "Interior").replace(/\bEXT\b\.?/gi, "Exterior");
+                    
+                    const isSlug = text.toUpperCase().startsWith("INT.") || text.toUpperCase().startsWith("EXT.");
                     const isTransition = text.match(/FADE IN|FADE OUT|CUT TO|ACT |END OF /i);
                     const isUppercase = text === text.toUpperCase();
-                    const isSlug = text.startsWith("Interior") || text.startsWith("Exterior");
-                    const isCentered = x > 180 && isUppercase && text.length < 30 && !isSlug && !isTransition;
+                    const isCenteredChar = x > 180 && isUppercase && text.length < 30 && !isSlug && !isTransition;
 
-                    if (isCentered) {
-                        flushNarrator();
-                        flushDialogue();
-                        const name = text.replace(/\([^)]*\)/g, "").trim();
-                        if (!name.match(/^\d+$/)) {
-                            foundChars.add(name);
-                            currentDialogueChar = name;
+                    if (isSlug) {
+                        flushAction();
+                        finalBlocks.push({ type: 'narrator', text: expandedText });
+                    } else if (isCenteredChar) {
+                        flushAction();
+                        foundChars.add(text);
+                        finalBlocks.push({ type: 'dialogue', character: text, text: "" });
+                    } else if (x > 120 && x < 350) {
+                        // This is dialogue for the last character added
+                        if (finalBlocks.length > 0 && finalBlocks[finalBlocks.length - 1].type === 'dialogue') {
+                            finalBlocks[finalBlocks.length - 1].text += (finalBlocks[finalBlocks.length - 1].text ? " " : "") + text;
+                        } else {
+                            currentActionText += (currentActionText ? " " : "") + expandedText;
                         }
-                    } else if (currentDialogueChar && x > 120 && x < 350) {
-                        currentDialogueText += (currentDialogueText ? " " : "") + text;
                     } else {
-                        flushDialogue();
-                        currentNarratorBlock += (currentNarratorBlock ? " " : "") + text;
+                        // Technical markers or action lines
+                        currentActionText += (currentActionText ? " " : "") + expandedText;
                     }
                 });
 
-                flushNarrator();
-                flushDialogue();
+                flushAction();
                 setCharacters([...foundChars].sort());
-                setSegments(finalBlocks);
+                setSegments(finalBlocks.filter(b => b.text.trim().length > 0));
             };
 
             const fetchAudio = async (text, voiceId) => {
@@ -232,6 +234,14 @@
                 }
             };
 
+            const VoiceList = () => (
+                <>
+                    <optgroup label="Narrators">{INWORLD_VOICES.narrators.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
+                    <optgroup label="Female">{INWORLD_VOICES.female.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
+                    <optgroup label="Male">{INWORLD_VOICES.male.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
+                </>
+            );
+
             return (
                 <div className="flex flex-col h-screen relative font-mono">
                     {showPaywall && (
@@ -270,27 +280,23 @@
                     </header>
 
                     <div className="flex-1 flex overflow-hidden">
-                        <aside className="w-64 border-r-4 border-black bg-gray-50 overflow-y-auto shrink-0 custom-scrollbar">
+                        <aside className="w-64 border-r-4 border-black bg-gray-50 overflow-y-auto shrink-0 custom-scrollbar pb-20">
                             <div className="p-2 bg-black text-white font-black text-[10px] uppercase italic text-center tracking-widest sticky top-0 z-50">Cast</div>
-                            <div className="p-4 space-y-8 pt-4">
+                            <div className="p-4 space-y-4 pt-4">
                                 <div className="p-2 border-2 border-black bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
                                     <p className="text-[9px] font-black text-gray-400 uppercase">Narrator</p>
                                     <select className="w-full text-[10px] font-bold outline-none cursor-pointer" value={voiceMap.Narrator} onChange={(e) => setVoiceMap({...voiceMap, Narrator: e.target.value})}>
-                                        <optgroup label="Narrators">{INWORLD_VOICES.narrators.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
-                                        <optgroup label="Female">{INWORLD_VOICES.female.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
-                                        <optgroup label="Male">{INWORLD_VOICES.male.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
+                                        <VoiceList />
                                     </select>
                                 </div>
                                 {characters.map(char => (
                                     <div key={char} className="p-2 border-2 border-black bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
                                         <p className="text-[9px] font-black uppercase tracking-tight">{char}</p>
                                         <select className="w-full text-[10px] font-bold outline-none cursor-pointer" value={voiceMap[char] || "Abby"} onChange={(e) => setVoiceMap({...voiceMap, [char]: e.target.value})}>
-                                            <optgroup label="Female">{INWORLD_VOICES.female.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
-                                            <optgroup label="Male">{INWORLD_VOICES.male.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
+                                            <VoiceList />
                                         </select>
                                     </div>
                                 ))}
-                                <div className="h-40"></div> {/* Bottom Buffer */}
                             </div>
                         </aside>
 
