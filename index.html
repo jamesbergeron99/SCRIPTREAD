@@ -9,28 +9,18 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
-    
-    <script src="https://www.paypal.com/sdk/js?client-id=BAAK4FNNEoRhK_jriVX-V3QO-iWVuGEuUdAmvgVHX6pluidxESAwHaGB_fm7WGrOSxe-6VcmE6xZvnvdjU&components=hosted-buttons&disable-funding=venmo&currency=CAD"></script>
-    
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
         body { font-family: 'Space+Mono', monospace; overflow: hidden; height: 100vh; background: #fff; }
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: black; }
-        
         select { 
             appearance: none; 
             background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%223%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M6%209l6%206%206-6%22%3E%3C%2Fpath%3E%3C%2Fsvg%3E"); 
-            background-repeat: no-repeat; 
-            background-position: right 0.5rem center; 
-            padding-right: 1.5rem;
+            background-repeat: no-repeat; background-position: right 0.5rem center; padding-right: 1.5rem;
             width: 100%; border: 2px solid black; font-size: 11px; font-weight: 700; background-color: white; cursor: pointer;
         }
-
-        .pay-screen { 
-            display: flex; flex-direction: column; align-items: center; justify-content: center; 
-            height: 100%; background: #fff; text-align: center; padding: 40px;
-        }
+        .pay-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; background: #fff; text-align: center; padding: 40px; }
     </style>
 </head>
 <body>
@@ -72,25 +62,19 @@
                 if (!isUnlocked && totalSeconds >= TRIAL_LIMIT) { stopAudio(); setShowPaywall(true); }
             }, [totalSeconds, isUnlocked]);
 
-            // RELENTLESS PAYPAL INITIALIZER
+            // DYNAMIC PAYPAL LOADER: Injects script ONLY when paywall is shown
             useEffect(() => {
-                if (showPaywall && window.paypal) {
-                    const renderPaypal = () => {
-                        const target = document.getElementById('paypal-button-container');
-                        if (target && target.innerHTML === '') {
-                            window.paypal.HostedButtons({
-                                hostedButtonId: "BAAK4FNNEoRhK_jriVX-V3QO-iWVuGEuUdAmvgVHX6pluidxESAwHaGB_fm7WGrOSxe-6VcmE6xZvnvdjU",
-                                onApprove: () => { setIsUnlocked(true); setShowPaywall(false); }
-                            }).render("#paypal-button-container");
-                        }
+                if (showPaywall) {
+                    const script = document.createElement('script');
+                    script.src = "https://www.paypal.com/sdk/js?client-id=BAAK4FNNEoRhK_jriVX-V3QO-iWVuGEuUdAmvgVHX6pluidxESAwHaGB_fm7WGrOSxe-6VcmE6xZvnvdjU&components=hosted-buttons&disable-funding=venmo&currency=CAD";
+                    script.async = true;
+                    script.onload = () => {
+                        window.paypal.HostedButtons({
+                            hostedButtonId: "BAAK4FNNEoRhK_jriVX-V3QO-iWVuGEuUdAmvgVHX6pluidxESAwHaGB_fm7WGrOSxe-6VcmE6xZvnvdjU",
+                            onApprove: () => { setIsUnlocked(true); setShowPaywall(false); }
+                        }).render("#paypal-button-container");
                     };
-                    const interval = setInterval(() => {
-                        if (document.getElementById('paypal-button-container')) {
-                            renderPaypal();
-                            clearInterval(interval);
-                        }
-                    }, 200);
-                    return () => clearInterval(interval);
+                    document.body.appendChild(script);
                 }
             }, [showPaywall]);
 
@@ -127,16 +111,13 @@
                 lines.forEach(line => {
                     let text = line.text.trim();
                     const x = line.x;
-                    // STRICT PAGE NUMBER FILTER
+                    // PAGE NUMBER FILTER: Kills page numbers from cast list
                     if (!text || /^\d+$/.test(text) || /^PAGE\s+\d+$/i.test(text) || /^\d+\.$/.test(text)) return;
-
                     text = text.replace(/\([^)]*\)/g, "").trim();
                     if (!text) return;
-
                     const expandedText = text.replace(/\bINT\b\.?/gi, "Interior").replace(/\bEXT\b\.?/gi, "Exterior");
                     const isSlug = expandedText.startsWith("Interior") || expandedText.startsWith("Exterior");
                     const isCenteredChar = x > 180 && text === text.toUpperCase() && text.length < 30 && !isSlug;
-
                     if (isSlug) { flushAction(); finalBlocks.push({ type: 'narrator', text: expandedText }); }
                     else if (isCenteredChar) { flushAction(); foundChars.add(text); finalBlocks.push({ type: 'dialogue', character: text, text: "" }); }
                     else if (x > 120 && x < 350 && finalBlocks.length > 0 && finalBlocks[finalBlocks.length - 1].type === 'dialogue') {
@@ -259,9 +240,9 @@
                             {showPaywall ? (
                                 <div className="pay-screen">
                                     <h2 className="text-xl font-black uppercase mb-4 tracking-tighter">Support the Production</h2>
-                                    <p className="font-bold text-sm mb-8 leading-tight uppercase italic text-gray-600 max-w-sm">To cover the cost of high-quality AI narration and continue the table read, please consider a small contribution.</p>
+                                    <p className="font-bold text-sm mb-8 leading-tight uppercase italic text-gray-600 max-w-sm">To cover the cost of high-quality AI narration and continue the table read, please consider a donation of $2.50 per script.</p>
                                     <div id="paypal-button-container" className="min-w-[300px]"></div>
-                                    <button onClick={() => setShowPaywall(false)} className="mt-12 text-[10px] font-black uppercase underline">Close and Go Back</button>
+                                    <button onClick={() => setShowPaywall(false)} className="mt-12 text-[10px] font-black uppercase underline">Go Back</button>
                                 </div>
                             ) : (
                                 <div className="p-8 pb-32">
