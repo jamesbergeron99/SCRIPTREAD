@@ -22,7 +22,7 @@
             background-position: right 0.5rem center; 
             padding-right: 1.5rem;
         }
-        .paywall-overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.95); backdrop-filter: blur(10px); z-index: 10000; display: flex; align-items: center; justify-content: center; }
+        .paywall-overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.98); backdrop-filter: blur(20px); z-index: 10000; display: flex; align-items: center; justify-content: center; }
     </style>
 </head>
 <body>
@@ -61,6 +61,7 @@
                 audioContext.current = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
             }, []);
 
+            // LOCKOUT MONITOR
             useEffect(() => {
                 if (!isUnlocked && totalSeconds >= TRIAL_LIMIT) {
                     stopAudio();
@@ -68,14 +69,23 @@
                 }
             }, [totalSeconds, isUnlocked]);
 
+            // PAYPAL FORCE LOAD
             useEffect(() => {
                 if (showPaywall && window.paypal) {
-                    const btn = document.getElementById('paypal-btn-container');
-                    if (btn) btn.innerHTML = '';
-                    window.paypal.HostedButtons({
-                        hostedButtonId: "BAAK4FNNEoRhK_jriVX-V3QO-iWVuGEuUdAmvgVHX6pluidxESAwHaGB_fm7WGrOSxe-6VcmE6xZvnvdjU",
-                        onApprove: () => { setIsUnlocked(true); setShowPaywall(false); }
-                    }).render("#paypal-btn-container");
+                    const renderPaypal = () => {
+                        const el = document.getElementById('paypal-button-container');
+                        if (el) {
+                            el.innerHTML = '';
+                            window.paypal.HostedButtons({
+                                hostedButtonId: "BAAK4FNNEoRhK_jriVX-V3QO-iWVuGEuUdAmvgVHX6pluidxESAwHaGB_fm7WGrOSxe-6VcmE6xZvnvdjU",
+                                onApprove: () => { 
+                                    setIsUnlocked(true); 
+                                    setShowPaywall(false); 
+                                }
+                            }).render("#paypal-button-container");
+                        }
+                    };
+                    setTimeout(renderPaypal, 500);
                 }
             }, [showPaywall]);
 
@@ -105,17 +115,13 @@
                     let text = line.text.trim();
                     const x = line.x;
 
-                    // FILTER PAGE NUMBERS
                     const isPageNum = text.match(/^\d+$/) || text.match(/^PAGE\s+\d+$/i) || text.match(/^\d+\s*\.$/);
                     if (!text || isPageNum) return;
 
-                    // STRIP PARENTHETICALS FROM READING
                     text = text.replace(/\([^)]*\)/g, "").trim();
                     if (!text) return;
 
-                    // TEXT EXPANSION
                     const expandedText = text.replace(/\bINT\b\.?/gi, "Interior").replace(/\bEXT\b\.?/gi, "Exterior");
-                    
                     const isSlug = text.toUpperCase().startsWith("INT.") || text.toUpperCase().startsWith("EXT.");
                     const isTransition = text.match(/FADE IN|FADE OUT|CUT TO|ACT |END OF /i);
                     const isUppercase = text === text.toUpperCase();
@@ -129,14 +135,12 @@
                         foundChars.add(text);
                         finalBlocks.push({ type: 'dialogue', character: text, text: "" });
                     } else if (x > 120 && x < 350) {
-                        // This is dialogue for the last character added
                         if (finalBlocks.length > 0 && finalBlocks[finalBlocks.length - 1].type === 'dialogue') {
                             finalBlocks[finalBlocks.length - 1].text += (finalBlocks[finalBlocks.length - 1].text ? " " : "") + text;
                         } else {
                             currentActionText += (currentActionText ? " " : "") + expandedText;
                         }
                     } else {
-                        // Technical markers or action lines
                         currentActionText += (currentActionText ? " " : "") + expandedText;
                     }
                 });
@@ -157,16 +161,16 @@
             };
 
             const playSegment = async (index) => {
-                if (!isPlayingRef.current || index >= segments.length) {
-                    if (index >= segments.length) setIsPlaying(false);
+                // HARD BLOCK
+                if (!isPlayingRef.current || index >= segments.length || (!isUnlocked && totalSeconds >= TRIAL_LIMIT)) {
+                    if (!isUnlocked && totalSeconds >= TRIAL_LIMIT) setShowPaywall(true);
                     return;
                 }
-                if (!isUnlocked && totalSeconds >= TRIAL_LIMIT) {
-                    stopAudio(); setShowPaywall(true); return;
-                }
+
                 setCurrentIdx(index);
                 const seg = segments[index];
                 const voice = seg.type === 'narrator' ? voiceMap.Narrator : (voiceMap[seg.character] || "Abby");
+                
                 try {
                     const buffer = await fetchAudio(seg.text, voice);
                     if (!isPlayingRef.current) return;
@@ -246,15 +250,20 @@
                 <div className="flex flex-col h-screen relative font-mono">
                     {showPaywall && (
                         <div className="paywall-overlay">
-                            <div className="max-w-md w-full border-[8px] border-black bg-white p-8 shadow-[15px_15px_0px_0px_rgba(0,0,0,1)] text-center">
-                                <h2 className="text-3xl font-black uppercase mb-4 italic tracking-tighter">Trial Limit Reached</h2>
-                                <p className="font-bold text-sm mb-8 leading-tight uppercase italic">Please contribute to the cost of these professional voices to unlock the full script.</p>
-                                <div id="paypal-btn-container" className="mb-6 min-h-[50px] flex justify-center"></div>
-                                <div className="border-t-2 border-black pt-4 flex gap-2">
-                                    <input type="password" value={unlockCode} onChange={(e) => setUnlockCode(e.target.value)} placeholder="CODE" className="flex-1 border-4 border-black p-2 text-xs font-black outline-none uppercase" />
-                                    <button onClick={() => unlockCode.toLowerCase() === 'frank2026' && (setIsUnlocked(true), setShowPaywall(false))} className="bg-black text-white px-4 font-black text-xs uppercase hover:invert">Unlock</button>
+                            <div className="max-w-md w-full border-[8px] border-black bg-white p-10 shadow-[20px_20px_0px_0px_rgba(0,0,0,1)] text-center">
+                                <h2 className="text-4xl font-black uppercase mb-4 italic tracking-tighter">Script Locked</h2>
+                                <p className="font-bold text-sm mb-10 leading-tight uppercase italic text-gray-600">Trial limit of 30 seconds reached. Please pay once to unlock the full script for professional table reading.</p>
+                                
+                                {/* PAYPAL COMPONENT */}
+                                <div id="paypal-button-container" className="mb-10 flex justify-center min-h-[150px]"></div>
+
+                                <div className="border-t-4 border-black pt-6">
+                                    <p className="text-[10px] font-black uppercase mb-3">Or enter your personal access code</p>
+                                    <div className="flex gap-2">
+                                        <input type="password" value={unlockCode} onChange={(e) => setUnlockCode(e.target.value)} placeholder="ENTER CODE" className="flex-1 border-4 border-black p-3 text-sm font-black outline-none uppercase" />
+                                        <button onClick={() => unlockCode.toLowerCase() === 'frank2026' && (setIsUnlocked(true), setShowPaywall(false))} className="bg-black text-white px-6 font-black text-xs uppercase hover:bg-gray-800">Unlock</button>
+                                    </div>
                                 </div>
-                                <button onClick={() => setShowPaywall(false)} className="mt-4 text-[10px] font-black uppercase underline">Maybe Later</button>
                             </div>
                         </div>
                     )}
