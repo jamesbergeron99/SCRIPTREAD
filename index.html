@@ -18,6 +18,7 @@
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: black; }
         
+        /* DROPDOWN FIX: Force visibility and clean look */
         select { 
             appearance: none; 
             background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%223%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M6%209l6%206%206-6%22%3E%3C%2Fpath%3E%3C%2Fsvg%3E"); 
@@ -26,13 +27,21 @@
             padding-right: 1.5rem;
             width: 100%;
             border: 2px solid black;
-            font-size: 10px;
+            font-size: 11px;
             font-weight: 700;
             background-color: white;
             cursor: pointer;
         }
 
-        .paywall-overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.98); backdrop-filter: blur(25px); z-index: 10000; display: flex; align-items: center; justify-content: center; }
+        .paywall-overlay { 
+            position: fixed; 
+            inset: 0; 
+            background: rgba(255,255,255,0.99); 
+            z-index: 100000; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+        }
     </style>
 </head>
 <body>
@@ -42,7 +51,7 @@
         const { useState, useEffect, useRef } = React;
 
         const INWORLD_VOICES = {
-            narrators: [{ id: "Selene", name: "Selene (Default)" }, { id: "default-oglabcjnetcklcq7rghmbw__frank2", name: "Frank" }],
+            narrators: [{ id: "Selene", name: "Selene" }, { id: "default-oglabcjnetcklcq7rghmbw__frank2", name: "Frank" }],
             female: [{ id: "Abby", name: "Abby" }, { id: "Amina", name: "Amina" }, { id: "Anjali", name: "Anjali" }, { id: "Aoede", name: "Aoede" }, { id: "Ashley", name: "Ashley" }, { id: "Bianca", name: "Bianca" }, { id: "Celeste", name: "Celeste" }, { id: "Chloe", name: "Chloe" }, { id: "Claire", name: "Claire" }, { id: "Darlene", name: "Darlene" }, { id: "Deborah", name: "Deborah" }, { id: "Eleanor", name: "Eleanor" }, { id: "Evelyn", name: "Evelyn" }, { id: "Hana", name: "Hana" }, { id: "Jessica", name: "Jessica" }, { id: "Kelsey", name: "Kelsey" }, { id: "Lauren", name: "Lauren" }, { id: "Leda", name: "Leda" }, { id: "Loretta", name: "Loretta" }, { id: "Luna", name: "Luna" }, { id: "Marlene", name: "Marlene" }, { id: "Mia", name: "Mia" }, { id: "Miranda", name: "Miranda" }, { id: "Nadia", name: "Nadia" }, { id: "Naomi", name: "Naomi" }, { id: "Olivia", name: "Olivia" }, { id: "Pippa", name: "Pippa" }, { id: "Pixie", name: "Pixie" }, { id: "Riley", name: "Riley" }, { id: "Saanvi", name: "Saanvi" }, { id: "Sarah", name: "Sarah" }, { id: "Serena", name: "Serena" }, { id: "Sophie", name: "Sophie" }, { id: "Tessa", name: "Tessa" }, { id: "Veronica", name: "Veronica" }, { id: "Victoria", name: "Victoria" }],
             male: [{ id: "Alex", name: "Alex" }, { id: "Arjun", name: "Arjun" }, { id: "Avery", name: "Avery" }, { id: "Blake", name: "Blake" }, { id: "Brandon", name: "Brandon" }, { id: "Brian", name: "Brian" }, { id: "Callum", name: "Callum" }, { id: "Carter", name: "Carter" }, { id: "Cedric", name: "Cedric" }, { id: "Clive", name: "Clive" }, { id: "Conrad", name: "Conrad" }, { id: "Damon", name: "Damon" }, { id: "Dennis", name: "Dennis" }, { id: "Derek", name: "Derek" }, { id: "Dominus", name: "Dominus" }, { id: "Duncan", name: "Duncan" }, { id: "Edward", name: "Edward" }, { id: "Elliott", name: "Elliott" }, { id: "Ethan", name: "Ethan" }, { id: "Evan", name: "Evan" }, { id: "Felix", name: "Felix" }, { id: "Gareth", name: "Gareth" }, { id: "Graham", name: "Graham" }, { id: "Hamish", name: "Hamish" }, { id: "Hank", name: "Hank" }, { id: "James", name: "James" }, { id: "Jason", name: "Jason" }, { id: "Jonah", name: "Jonah" }, { id: "Levi", name: "Levi" }, { id: "Liam", name: "Liam" }, { id: "Lucian", name: "Lucian" }, { id: "Malcolm", name: "Malcolm" }, { id: "Marcus", name: "Marcus" }, { id: "Mark", name: "Mark" }, { id: "Nate", name: "Nate" }, { id: "Oliver", name: "Oliver" }, { id: "Reed", name: "Reed" }, { id: "Rupert", name: "Rupert" }, { id: "Sebastian", name: "Sebastian" }, { id: "Simon", name: "Simon" }, { id: "Timothy", name: "Timothy" }, { id: "Trevor", name: "Trevor" }, { id: "Tristan", name: "Tristan" }, { id: "Tyler", name: "Tyler" }, { id: "Victor", name: "Victor" }, { id: "Vinny", name: "Vinny" }]
         };
@@ -70,6 +79,7 @@
                 audioContext.current = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
             }, []);
 
+            // Paywall Watcher
             useEffect(() => {
                 if (!isUnlocked && totalSeconds >= TRIAL_LIMIT) {
                     stopAudio();
@@ -77,18 +87,15 @@
                 }
             }, [totalSeconds, isUnlocked]);
 
-            // PAYPAL INJECTION
+            // Force PayPal Render
             useEffect(() => {
                 if (showPaywall && window.paypal) {
-                    const el = document.getElementById('paypal-button-container');
-                    if (el) {
-                        el.innerHTML = '';
+                    const btnBox = document.getElementById('paypal-button-container');
+                    if (btnBox) {
+                        btnBox.innerHTML = '';
                         window.paypal.HostedButtons({
                             hostedButtonId: "BAAK4FNNEoRhK_jriVX-V3QO-iWVuGEuUdAmvgVHX6pluidxESAwHaGB_fm7WGrOSxe-6VcmE6xZvnvdjU",
-                            onApprove: () => { 
-                                setIsUnlocked(true); 
-                                setShowPaywall(false); 
-                            }
+                            onApprove: () => { setIsUnlocked(true); setShowPaywall(false); }
                         }).render("#paypal-button-container");
                     }
                 }
@@ -119,13 +126,14 @@
                 lines.forEach(line => {
                     let text = line.text.trim();
                     const x = line.x;
-                    const isPageNum = text.match(/^\d+$/) || text.match(/^PAGE\s+\d+$/i) || text.match(/^\d+\s*\.$/);
-                    if (!text || isPageNum) return;
+                    if (!text || text.match(/^\d+$/) || text.match(/^PAGE\s+\d+$/i)) return;
+
                     text = text.replace(/\([^)]*\)/g, "").trim();
                     if (!text) return;
+
                     const expandedText = text.replace(/\bINT\b\.?/gi, "Interior").replace(/\bEXT\b\.?/gi, "Exterior");
                     const isSlug = text.toUpperCase().startsWith("INT.") || text.toUpperCase().startsWith("EXT.");
-                    const isCenteredChar = line.x > 180 && text === text.toUpperCase() && text.length < 30 && !isSlug && !text.match(/ACT |END OF /i);
+                    const isCenteredChar = x > 180 && text === text.toUpperCase() && text.length < 30 && !isSlug;
 
                     if (isSlug) {
                         flushAction();
@@ -134,9 +142,9 @@
                         flushAction();
                         foundChars.add(text);
                         finalBlocks.push({ type: 'dialogue', character: text, text: "" });
-                    } else if (line.x > 120 && line.x < 350) {
+                    } else if (x > 120 && x < 350) {
                         if (finalBlocks.length > 0 && finalBlocks[finalBlocks.length - 1].type === 'dialogue') {
-                            finalBlocks[finalBlocks.length - 1].text += " " + text;
+                            finalBlocks[finalBlocks.length - 1].text += (finalBlocks[finalBlocks.length - 1].text ? " " : "") + text;
                         } else {
                             currentActionText += (currentActionText ? " " : "") + expandedText;
                         }
@@ -230,21 +238,30 @@
                 }
             };
 
+            const VoiceOptions = () => (
+                <>
+                    <optgroup label="Narrators">{INWORLD_VOICES.narrators.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
+                    <optgroup label="Female">{INWORLD_VOICES.female.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
+                    <optgroup label="Male">{INWORLD_VOICES.male.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
+                </>
+            );
+
             return (
                 <div className="flex flex-col h-screen relative font-mono">
                     {showPaywall && (
                         <div className="paywall-overlay">
-                            <div className="max-w-md w-full border-[8px] border-black bg-white p-12 shadow-[20px_20px_0px_0px_rgba(0,0,0,1)] text-center">
-                                <div id="paypal-button-container" className="flex justify-center min-h-[150px]"></div>
+                            <div className="bg-white p-4 border-8 border-black shadow-2xl">
+                                <div id="paypal-button-container"></div>
+                                <button onClick={() => setShowPaywall(false)} className="block w-full mt-4 text-[10px] font-black uppercase underline">Back to script</button>
                             </div>
                         </div>
                     )}
 
-                    <header className="border-b-4 border-black p-4 flex justify-between items-center bg-white shrink-0 shadow-sm z-50">
+                    <header className="border-b-4 border-black p-4 flex justify-between items-center bg-white shrink-0 z-50">
                         <h1 className="text-2xl font-black uppercase tracking-tighter italic">Scriptread</h1>
                         <div className="flex gap-3">
                             {!isUnlocked && <div className="text-[10px] font-black px-2 py-2 bg-yellow-400 border-2 border-black uppercase self-center">Trial: {Math.round(totalSeconds)}s / 30s</div>}
-                            <button onClick={masterAndExport} className="px-4 py-2 border-4 border-black font-black text-[10px] hover:bg-black hover:text-white transition-all uppercase">{isExporting ? `${exportProgress}%` : "Master & Export"}</button>
+                            <button onClick={masterAndExport} className="px-4 py-2 border-4 border-black font-black text-[10px] hover:bg-black hover:text-white transition-all uppercase tracking-tighter">{isExporting ? `${exportProgress}%` : "Master & Export"}</button>
                             <label className="px-4 py-2 bg-black text-white font-black text-[10px] cursor-pointer hover:invert border-2 border-black transition-all uppercase tracking-tighter">Load PDF <input type="file" className="hidden" accept=".pdf" onChange={(e) => {
                                 const file = e.target.files[0]; if (!file) return; stopAudio(); const reader = new FileReader();
                                 reader.onload = async () => {
@@ -261,24 +278,25 @@
                     </header>
 
                     <div className="flex-1 flex overflow-hidden">
-                        <aside className="w-64 border-r-4 border-black bg-gray-50 overflow-y-auto shrink-0 custom-scrollbar pb-[600px]">
+                        <aside className="w-64 border-r-4 border-black bg-gray-50 overflow-y-auto shrink-0 custom-scrollbar pb-[800px]">
                             <div className="p-2 bg-black text-white font-black text-[10px] uppercase italic text-center tracking-widest sticky top-0 z-50">Cast</div>
                             <div className="p-4 space-y-12">
                                 <div className="p-2 border-2 border-black bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
                                     <p className="text-[9px] font-black text-gray-400 uppercase mb-1">Narrator</p>
-                                    <select value={voiceMap.Narrator} onChange={(e) => setVoiceMap({...voiceMap, Narrator: e.target.value})}>
-                                        <optgroup label="Narrators">{INWORLD_VOICES.narrators.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
-                                        <optgroup label="Female">{INWORLD_VOICES.female.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
-                                        <optgroup label="Male">{INWORLD_VOICES.male.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
-                                    </select>
+                                    <select 
+                                        onClick={(e) => e.target.parentElement.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                                        onChange={(e) => setVoiceMap({...voiceMap, Narrator: e.target.value})}
+                                        value={voiceMap.Narrator}
+                                    ><VoiceOptions /></select>
                                 </div>
                                 {characters.map(char => (
                                     <div key={char} className="p-2 border-2 border-black bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
                                         <p className="text-[9px] font-black uppercase tracking-tight mb-1">{char}</p>
-                                        <select value={voiceMap[char] || "Abby"} onChange={(e) => setVoiceMap({...voiceMap, [char]: e.target.value})}>
-                                            <optgroup label="Female">{INWORLD_VOICES.female.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
-                                            <optgroup label="Male">{INWORLD_VOICES.male.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
-                                        </select>
+                                        <select 
+                                            onClick={(e) => e.target.parentElement.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                                            onChange={(e) => setVoiceMap({...voiceMap, [char]: e.target.value})}
+                                            value={voiceMap[char] || "Abby"}
+                                        ><VoiceOptions /></select>
                                     </div>
                                 ))}
                             </div>
