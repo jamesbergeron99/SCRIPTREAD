@@ -9,35 +9,30 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    
     <script src="https://www.paypal.com/sdk/js?client-id=BAAK4FNNEoRhK_jriVX-V3QO-iWVuGEuUdAmvgVHX6pluidxESAwHaGB_fm7WGrOSxe-6VcmE6xZvnvdjU&components=hosted-buttons&disable-funding=venmo&currency=CAD"></script>
+    
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
         body { font-family: 'Space+Mono', monospace; overflow: hidden; height: 100vh; background: #fff; }
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: black; }
         
-        /* RESTORED: Clean dropdown style with visibility fix */
         select { 
             appearance: none; 
             background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%223%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M6%209l6%206%206-6%22%3E%3C%2Fpath%3E%3C%2Fsvg%3E"); 
             background-repeat: no-repeat; 
             background-position: right 0.5rem center; 
             padding-right: 1.5rem;
-            cursor: pointer;
             width: 100%;
             border: 2px solid black;
             font-size: 10px;
             font-weight: 700;
             background-color: white;
+            cursor: pointer;
         }
 
-        /* Prevent system-level pop-ups from going off-screen by locking height in sidebar */
-        select:focus {
-            outline: none;
-            border-color: #000;
-        }
-
-        .paywall-overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.98); backdrop-filter: blur(20px); z-index: 10000; display: flex; align-items: center; justify-content: center; }
+        .paywall-overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.98); backdrop-filter: blur(25px); z-index: 10000; display: flex; align-items: center; justify-content: center; }
     </style>
 </head>
 <body>
@@ -82,6 +77,7 @@
                 }
             }, [totalSeconds, isUnlocked]);
 
+            // PAYPAL INJECTION
             useEffect(() => {
                 if (showPaywall && window.paypal) {
                     const el = document.getElementById('paypal-button-container');
@@ -89,7 +85,10 @@
                         el.innerHTML = '';
                         window.paypal.HostedButtons({
                             hostedButtonId: "BAAK4FNNEoRhK_jriVX-V3QO-iWVuGEuUdAmvgVHX6pluidxESAwHaGB_fm7WGrOSxe-6VcmE6xZvnvdjU",
-                            onApprove: () => { setIsUnlocked(true); setShowPaywall(false); }
+                            onApprove: () => { 
+                                setIsUnlocked(true); 
+                                setShowPaywall(false); 
+                            }
                         }).render("#paypal-button-container");
                     }
                 }
@@ -119,12 +118,11 @@
 
                 lines.forEach(line => {
                     let text = line.text.trim();
+                    const x = line.x;
                     const isPageNum = text.match(/^\d+$/) || text.match(/^PAGE\s+\d+$/i) || text.match(/^\d+\s*\.$/);
                     if (!text || isPageNum) return;
-
                     text = text.replace(/\([^)]*\)/g, "").trim();
                     if (!text) return;
-
                     const expandedText = text.replace(/\bINT\b\.?/gi, "Interior").replace(/\bEXT\b\.?/gi, "Exterior");
                     const isSlug = text.toUpperCase().startsWith("INT.") || text.toUpperCase().startsWith("EXT.");
                     const isCenteredChar = line.x > 180 && text === text.toUpperCase() && text.length < 30 && !isSlug && !text.match(/ACT |END OF /i);
@@ -138,7 +136,7 @@
                         finalBlocks.push({ type: 'dialogue', character: text, text: "" });
                     } else if (line.x > 120 && line.x < 350) {
                         if (finalBlocks.length > 0 && finalBlocks[finalBlocks.length - 1].type === 'dialogue') {
-                            finalBlocks[finalBlocks.length - 1].text += (finalBlocks[finalBlocks.length - 1].text ? " " : "") + text;
+                            finalBlocks[finalBlocks.length - 1].text += " " + text;
                         } else {
                             currentActionText += (currentActionText ? " " : "") + expandedText;
                         }
@@ -232,21 +230,11 @@
                 }
             };
 
-            const VoiceOptions = () => (
-                <>
-                    <optgroup label="Narrators">{INWORLD_VOICES.narrators.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
-                    <optgroup label="Female">{INWORLD_VOICES.female.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
-                    <optgroup label="Male">{INWORLD_VOICES.male.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
-                </>
-            );
-
             return (
                 <div className="flex flex-col h-screen relative font-mono">
                     {showPaywall && (
                         <div className="paywall-overlay">
                             <div className="max-w-md w-full border-[8px] border-black bg-white p-12 shadow-[20px_20px_0px_0px_rgba(0,0,0,1)] text-center">
-                                <h2 className="text-4xl font-black uppercase mb-6 italic tracking-tighter">Script Locked</h2>
-                                <p className="font-bold text-sm mb-12 leading-tight uppercase italic text-gray-700">Contribute to the cost of professional voices to unlock the full script.</p>
                                 <div id="paypal-button-container" className="flex justify-center min-h-[150px]"></div>
                             </div>
                         </div>
@@ -273,23 +261,24 @@
                     </header>
 
                     <div className="flex-1 flex overflow-hidden">
-                        <aside className="w-64 border-r-4 border-black bg-gray-50 overflow-y-auto shrink-0 custom-scrollbar pb-64">
+                        <aside className="w-64 border-r-4 border-black bg-gray-50 overflow-y-auto shrink-0 custom-scrollbar pb-[600px]">
                             <div className="p-2 bg-black text-white font-black text-[10px] uppercase italic text-center tracking-widest sticky top-0 z-50">Cast</div>
-                            <div className="p-4 space-y-6">
+                            <div className="p-4 space-y-12">
                                 <div className="p-2 border-2 border-black bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
                                     <p className="text-[9px] font-black text-gray-400 uppercase mb-1">Narrator</p>
-                                    <select 
-                                        value={voiceMap.Narrator} 
-                                        onChange={(e) => setVoiceMap({...voiceMap, Narrator: e.target.value})}
-                                    ><VoiceOptions /></select>
+                                    <select value={voiceMap.Narrator} onChange={(e) => setVoiceMap({...voiceMap, Narrator: e.target.value})}>
+                                        <optgroup label="Narrators">{INWORLD_VOICES.narrators.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
+                                        <optgroup label="Female">{INWORLD_VOICES.female.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
+                                        <optgroup label="Male">{INWORLD_VOICES.male.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
+                                    </select>
                                 </div>
                                 {characters.map(char => (
                                     <div key={char} className="p-2 border-2 border-black bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
                                         <p className="text-[9px] font-black uppercase tracking-tight mb-1">{char}</p>
-                                        <select 
-                                            value={voiceMap[char] || "Abby"} 
-                                            onChange={(e) => setVoiceMap({...voiceMap, [char]: e.target.value})}
-                                        ><VoiceOptions /></select>
+                                        <select value={voiceMap[char] || "Abby"} onChange={(e) => setVoiceMap({...voiceMap, [char]: e.target.value})}>
+                                            <optgroup label="Female">{INWORLD_VOICES.female.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
+                                            <optgroup label="Male">{INWORLD_VOICES.male.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
+                                        </select>
                                     </div>
                                 ))}
                             </div>
