@@ -6,16 +6,13 @@ const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '.')));
 
-// The voice engine
 app.post('/api/tts', async (req, res) => {
     try {
-        const apiKey = process.env.REACT_APP_INWORLD_KEY;
-        if (!apiKey) return res.status(500).json({ error: "API Key missing in Render Dashboard" });
-
+        const key = process.env.REACT_APP_INWORLD_KEY;
         const response = await fetch("https://api.inworld.ai/tts/v1/voice", {
             method: "POST",
             headers: { 
-                "Authorization": `Basic ${apiKey}`, 
+                "Authorization": `Basic ${key}`, 
                 "Content-Type": "application/json" 
             },
             body: JSON.stringify({ 
@@ -27,14 +24,11 @@ app.post('/api/tts', async (req, res) => {
         const data = await response.json();
         res.json(data);
     } catch (e) {
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: "Voice Engine Error" });
     }
 });
 
-// Serve the index.html file
-app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
-});
+app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Engine online on port ${PORT}`));
+app.listen(PORT, () => console.log('Server Secure'));
