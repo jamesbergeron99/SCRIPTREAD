@@ -33,15 +33,13 @@
         }
 
         .pay-screen { 
-            position: absolute;
-            inset: 0;
             display: flex; 
             flex-direction: column;
             align-items: center; 
             justify-content: center; 
-            background: white;
-            z-index: 99999;
-            padding: 20px;
+            height: 100%;
+            background: #fff;
+            padding: 40px;
         }
     </style>
 </head>
@@ -66,6 +64,8 @@
             const [isUnlocked, setIsUnlocked] = useState(false);
             const [totalSeconds, setTotalSeconds] = useState(0);
             const [showPaywall, setShowPaywall] = useState(false);
+            const [isExporting, setIsExporting] = useState(false);
+            const [exportProgress, setExportProgress] = useState(0);
 
             const audioContext = useRef(null);
             const activeSource = useRef(null);
@@ -79,35 +79,29 @@
             }, []);
 
             useEffect(() => {
-                if (!isUnlocked && totalSeconds >= TRIAL_LIMIT) {
-                    stopAudio();
-                    setShowPaywall(true);
-                }
+                if (!isUnlocked && totalSeconds >= TRIAL_LIMIT) { stopAudio(); setShowPaywall(true); }
             }, [totalSeconds, isUnlocked]);
 
-            // RELENTLESS PAYPAL INJECTION
             useEffect(() => {
                 if (showPaywall && window.paypal) {
-                    const renderPaypal = () => {
-                        const target = document.getElementById('paypal-button-container');
-                        if (target) {
-                            target.innerHTML = ''; 
+                    const check = setInterval(() => {
+                        const el = document.getElementById('paypal-button-container');
+                        if (el) {
+                            el.innerHTML = '';
                             window.paypal.HostedButtons({
                                 hostedButtonId: "BAAK4FNNEoRhK_jriVX-V3QO-iWVuGEuUdAmvgVHX6pluidxESAwHaGB_fm7WGrOSxe-6VcmE6xZvnvdjU",
                                 onApprove: () => { setIsUnlocked(true); setShowPaywall(false); }
                             }).render("#paypal-button-container");
+                            clearInterval(check);
                         }
-                    };
-                    setTimeout(renderPaypal, 500);
+                    }, 100);
+                    return () => clearInterval(check);
                 }
             }, [showPaywall]);
 
             const stopAudio = () => {
                 isPlayingRef.current = false; setIsPlaying(false);
-                if (activeSource.current) {
-                    try { activeSource.current.stop(); } catch(e) {}
-                    activeSource.current = null;
-                }
+                if (activeSource.current) { try { activeSource.current.stop(); } catch(e) {} activeSource.current = null; }
             };
 
             const fetchAudio = async (text, voiceId) => {
@@ -138,9 +132,8 @@
                 lines.forEach(line => {
                     let text = line.text.trim();
                     const x = line.x;
-                    // STRICT PAGE NUMBER KILLER
-                    const isPageNum = /^\d+$/.test(text) || /^PAGE\s+\d+$/i.test(text) || /^\d+\.$/.test(text);
-                    if (!text || isPageNum) return;
+                    // STRICT PAGE NUMBER FILTER
+                    if (!text || text.match(/^\d+$/) || text.match(/^PAGE\s+\d+$/i) || text.match(/^\d+\s*\.$/)) return;
 
                     text = text.replace(/\([^)]*\)/g, "").trim();
                     if (!text) return;
@@ -177,6 +170,38 @@
                 } catch (e) { if(isPlayingRef.current) playSegment(index + 1); }
             };
 
+            const masterAndExport = async () => {
+                if (!isUnlocked) { setShowPaywall(true); return; }
+                setIsExporting(true); setExportProgress(0);
+                const buffers = [];
+                try {
+                    for (let i = 0; i < segments.length; i++) {
+                        setExportProgress(Math.round((i / segments.length) * 100));
+                        const buffer = await fetchAudio(segments[i].text, segments[i].type === 'narrator' ? voiceMap.Narrator : (voiceMap[segments[i].character] || "Abby"));
+                        buffers.push(buffer);
+                    }
+                    const totalLength = buffers.reduce((acc, b) => acc + b.length, 0);
+                    const masterBuffer = audioContext.current.createBuffer(1, totalLength, 24000);
+                    const channelData = masterBuffer.getChannelData(0);
+                    let offset = 0; buffers.forEach(b => { channelData.set(b.getChannelData(0), offset); offset += b.length; });
+                    const wavData = encodeWav(masterBuffer);
+                    const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([wavData], { type: 'audio/wav' }));
+                    link.download = "Scriptread_Master.wav"; link.click();
+                } catch (e) {}
+                setIsExporting(false);
+            };
+
+            const encodeWav = (buffer) => {
+                const length = buffer.length * 2; const view = new DataView(new ArrayBuffer(44 + length));
+                const writeString = (o, s) => { for (let i=0; i<s.length; i++) view.setUint8(o+i, s.charCodeAt(i)); };
+                writeString(0, 'RIFF'); view.setUint32(4, 36 + length, true); writeString(8, 'WAVE'); writeString(12, 'fmt ');
+                view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true); view.setUint32(24, 24000, true);
+                view.setUint32(28, 48000, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true); writeString(36, 'data'); view.setUint32(40, length, true);
+                const data = buffer.getChannelData(0); let offset = 44;
+                for (let i=0; i<data.length; i++, offset+=2) { const s = Math.max(-1, Math.min(1, data[i])); view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true); }
+                return view.buffer;
+            };
+
             const togglePlay = () => {
                 if (isPlaying) { stopAudio(); }
                 else { if (audioContext.current.state === 'suspended') audioContext.current.resume(); isPlayingRef.current = true; setIsPlaying(true); playSegment(currentIdx === -1 ? 0 : currentIdx); }
@@ -192,18 +217,11 @@
 
             return (
                 <div className="flex flex-col h-screen relative font-mono">
-                    {showPaywall && (
-                        <div className="pay-screen">
-                            <p className="font-black uppercase tracking-tighter mb-8 text-center">Trial ended. Contribute to unlock professional voices.</p>
-                            <div id="paypal-button-container" style={{minWidth: '300px'}}></div>
-                            <button onClick={() => setShowPaywall(false)} className="mt-12 text-[10px] font-black uppercase underline">Go Back</button>
-                        </div>
-                    )}
-
                     <header className="border-b-4 border-black p-4 flex justify-between items-center bg-white shrink-0 z-50">
                         <h1 className="text-2xl font-black uppercase tracking-tighter italic">Scriptread</h1>
                         <div className="flex gap-3">
                             {!isUnlocked && <div className="text-[10px] font-black px-2 py-2 bg-yellow-400 border-2 border-black uppercase tracking-tighter self-center">Trial: {Math.round(totalSeconds)}s / 30s</div>}
+                            <button onClick={masterAndExport} className="px-4 py-2 border-4 border-black font-black text-[10px] hover:bg-black hover:text-white transition-all uppercase tracking-tighter">{isExporting ? `${exportProgress}%` : "Master & Export"}</button>
                             <label className="px-4 py-2 bg-black text-white font-black text-[10px] cursor-pointer hover:invert border-2 border-black transition-all uppercase tracking-tighter">Load PDF <input type="file" className="hidden" accept=".pdf" onChange={(e) => {
                                 const file = e.target.files[0]; if (!file) return; stopAudio(); const reader = new FileReader();
                                 reader.onload = async () => {
@@ -242,13 +260,23 @@
                             </div>
                         </aside>
 
-                        <main className="flex-1 p-8 overflow-y-auto bg-white custom-scrollbar pb-32">
-                            {segments.map((seg, i) => (
-                                <div key={i} className={`p-6 border-2 mb-4 transition-all ${currentIdx === i ? 'bg-black text-white scale-[1.01]' : 'border-black opacity-30'}`}>
-                                    {seg.type === 'dialogue' && <p className="text-[10px] font-black uppercase mb-1">{seg.character}</p>}
-                                    <p className="text-sm font-bold uppercase leading-tight">{seg.text}</p>
+                        <main className="flex-1 overflow-y-auto bg-white custom-scrollbar pb-32">
+                            {showPaywall ? (
+                                <div className="pay-screen">
+                                    <p className="font-black uppercase tracking-widest text-center mb-6">Trial Over. Support voices to continue reading.</p>
+                                    <div id="paypal-button-container" className="min-w-[300px]"></div>
+                                    <button onClick={() => setShowPaywall(false)} className="mt-12 text-[10px] font-black uppercase underline">Go Back</button>
                                 </div>
-                            ))}
+                            ) : (
+                                <div className="p-8 pb-32">
+                                    {segments.map((seg, i) => (
+                                        <div key={i} className={`p-6 border-2 mb-4 transition-all ${currentIdx === i ? 'bg-black text-white scale-[1.01]' : 'border-black opacity-30'}`}>
+                                            {seg.type === 'dialogue' && <p className="text-[10px] font-black uppercase mb-1">{seg.character}</p>}
+                                            <p className="text-sm font-bold uppercase leading-tight">{seg.text}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </main>
                     </div>
 
