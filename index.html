@@ -24,22 +24,12 @@
             background-repeat: no-repeat; 
             background-position: right 0.5rem center; 
             padding-right: 1.5rem;
-            width: 100%;
-            border: 2px solid black;
-            font-size: 11px;
-            font-weight: 700;
-            background-color: white;
-            cursor: pointer;
+            width: 100%; border: 2px solid black; font-size: 11px; font-weight: 700; background-color: white; cursor: pointer;
         }
 
         .pay-screen { 
-            display: flex; 
-            flex-direction: column;
-            align-items: center; 
-            justify-content: center; 
-            height: 100%;
-            background: #fff;
-            padding: 40px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center; 
+            height: 100%; background: #fff; text-align: center; padding: 40px;
         }
     </style>
 </head>
@@ -82,20 +72,25 @@
                 if (!isUnlocked && totalSeconds >= TRIAL_LIMIT) { stopAudio(); setShowPaywall(true); }
             }, [totalSeconds, isUnlocked]);
 
+            // RELENTLESS PAYPAL INITIALIZER
             useEffect(() => {
                 if (showPaywall && window.paypal) {
-                    const check = setInterval(() => {
-                        const el = document.getElementById('paypal-button-container');
-                        if (el) {
-                            el.innerHTML = '';
+                    const renderPaypal = () => {
+                        const target = document.getElementById('paypal-button-container');
+                        if (target && target.innerHTML === '') {
                             window.paypal.HostedButtons({
                                 hostedButtonId: "BAAK4FNNEoRhK_jriVX-V3QO-iWVuGEuUdAmvgVHX6pluidxESAwHaGB_fm7WGrOSxe-6VcmE6xZvnvdjU",
                                 onApprove: () => { setIsUnlocked(true); setShowPaywall(false); }
                             }).render("#paypal-button-container");
-                            clearInterval(check);
                         }
-                    }, 100);
-                    return () => clearInterval(check);
+                    };
+                    const interval = setInterval(() => {
+                        if (document.getElementById('paypal-button-container')) {
+                            renderPaypal();
+                            clearInterval(interval);
+                        }
+                    }, 200);
+                    return () => clearInterval(interval);
                 }
             }, [showPaywall]);
 
@@ -116,7 +111,7 @@
 
             const previewVoice = async (vId) => {
                 if (audioContext.current.state === 'suspended') audioContext.current.resume();
-                const buffer = await fetchAudio("Testing voice.", vId);
+                const buffer = await fetchAudio("Voice check.", vId);
                 const source = audioContext.current.createBufferSource();
                 source.buffer = buffer;
                 source.connect(audioContext.current.destination);
@@ -133,13 +128,13 @@
                     let text = line.text.trim();
                     const x = line.x;
                     // STRICT PAGE NUMBER FILTER
-                    if (!text || text.match(/^\d+$/) || text.match(/^PAGE\s+\d+$/i) || text.match(/^\d+\s*\.$/)) return;
+                    if (!text || /^\d+$/.test(text) || /^PAGE\s+\d+$/i.test(text) || /^\d+\.$/.test(text)) return;
 
                     text = text.replace(/\([^)]*\)/g, "").trim();
                     if (!text) return;
 
                     const expandedText = text.replace(/\bINT\b\.?/gi, "Interior").replace(/\bEXT\b\.?/gi, "Exterior");
-                    const isSlug = text.toUpperCase().startsWith("INT.") || text.toUpperCase().startsWith("EXT.");
+                    const isSlug = expandedText.startsWith("Interior") || expandedText.startsWith("Exterior");
                     const isCenteredChar = x > 180 && text === text.toUpperCase() && text.length < 30 && !isSlug;
 
                     if (isSlug) { flushAction(); finalBlocks.push({ type: 'narrator', text: expandedText }); }
@@ -217,7 +212,7 @@
 
             return (
                 <div className="flex flex-col h-screen relative font-mono">
-                    <header className="border-b-4 border-black p-4 flex justify-between items-center bg-white shrink-0 z-50">
+                    <header className="border-b-4 border-black p-4 flex justify-between items-center bg-white shrink-0 z-50 shadow-sm">
                         <h1 className="text-2xl font-black uppercase tracking-tighter italic">Scriptread</h1>
                         <div className="flex gap-3">
                             {!isUnlocked && <div className="text-[10px] font-black px-2 py-2 bg-yellow-400 border-2 border-black uppercase tracking-tighter self-center">Trial: {Math.round(totalSeconds)}s / 30s</div>}
@@ -260,12 +255,13 @@
                             </div>
                         </aside>
 
-                        <main className="flex-1 overflow-y-auto bg-white custom-scrollbar pb-32">
+                        <main className="flex-1 overflow-y-auto bg-white custom-scrollbar">
                             {showPaywall ? (
                                 <div className="pay-screen">
-                                    <p className="font-black uppercase tracking-widest text-center mb-6">Trial Over. Support voices to continue reading.</p>
+                                    <h2 className="text-xl font-black uppercase mb-4 tracking-tighter">Support the Production</h2>
+                                    <p className="font-bold text-sm mb-8 leading-tight uppercase italic text-gray-600 max-w-sm">To cover the cost of high-quality AI narration and continue the table read, please consider a small contribution.</p>
                                     <div id="paypal-button-container" className="min-w-[300px]"></div>
-                                    <button onClick={() => setShowPaywall(false)} className="mt-12 text-[10px] font-black uppercase underline">Go Back</button>
+                                    <button onClick={() => setShowPaywall(false)} className="mt-12 text-[10px] font-black uppercase underline">Close and Go Back</button>
                                 </div>
                             ) : (
                                 <div className="p-8 pb-32">
