@@ -46,7 +46,6 @@
             const [isUnlocked, setIsUnlocked] = useState(false);
             const [totalSeconds, setTotalSeconds] = useState(0);
             const [showPaywall, setShowPaywall] = useState(false);
-            const [unlockCode, setUnlockCode] = useState("");
             const [isExporting, setIsExporting] = useState(false);
             const [exportProgress, setExportProgress] = useState(0);
 
@@ -54,6 +53,8 @@
             const activeSource = useRef(null);
             const isPlayingRef = useRef(false);
             const TRIAL_LIMIT = 30;
+
+            // Render will supply this key
             const API_KEY = window.REACT_APP_INWORLD_KEY || "NDJKcTE4NWZnTG8wOW9Gd3BVWWhhTW9pWlU4dTJ3NU46NE8wenZzV2drTjhRRjlJZVl6aldhZ0lWS0VCYlpFckl5RWJ1a2tTd3Fwb2pVT1BGMGN2OVg4TERtQ1dHWFZ2Yw==";
 
             useEffect(() => {
@@ -61,7 +62,7 @@
                 audioContext.current = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
             }, []);
 
-            // LOCKOUT MONITOR
+            // Watch trial time
             useEffect(() => {
                 if (!isUnlocked && totalSeconds >= TRIAL_LIMIT) {
                     stopAudio();
@@ -69,23 +70,20 @@
                 }
             }, [totalSeconds, isUnlocked]);
 
-            // PAYPAL FORCE LOAD
+            // Force PayPal Button render
             useEffect(() => {
                 if (showPaywall && window.paypal) {
-                    const renderPaypal = () => {
-                        const el = document.getElementById('paypal-button-container');
-                        if (el) {
-                            el.innerHTML = '';
-                            window.paypal.HostedButtons({
-                                hostedButtonId: "BAAK4FNNEoRhK_jriVX-V3QO-iWVuGEuUdAmvgVHX6pluidxESAwHaGB_fm7WGrOSxe-6VcmE6xZvnvdjU",
-                                onApprove: () => { 
-                                    setIsUnlocked(true); 
-                                    setShowPaywall(false); 
-                                }
-                            }).render("#paypal-button-container");
-                        }
-                    };
-                    setTimeout(renderPaypal, 500);
+                    const container = document.getElementById('paypal-button-container');
+                    if (container) {
+                        container.innerHTML = '';
+                        window.paypal.HostedButtons({
+                            hostedButtonId: "BAAK4FNNEoRhK_jriVX-V3QO-iWVuGEuUdAmvgVHX6pluidxESAwHaGB_fm7WGrOSxe-6VcmE6xZvnvdjU",
+                            onApprove: () => { 
+                                setIsUnlocked(true); 
+                                setShowPaywall(false); 
+                            }
+                        }).render("#paypal-button-container");
+                    }
                 }
             }, [showPaywall]);
 
@@ -115,9 +113,11 @@
                     let text = line.text.trim();
                     const x = line.x;
 
+                    // FILTER PAGE NUMBERS
                     const isPageNum = text.match(/^\d+$/) || text.match(/^PAGE\s+\d+$/i) || text.match(/^\d+\s*\.$/);
                     if (!text || isPageNum) return;
 
+                    // STRIP PARENTHETICALS
                     text = text.replace(/\([^)]*\)/g, "").trim();
                     if (!text) return;
 
@@ -161,16 +161,13 @@
             };
 
             const playSegment = async (index) => {
-                // HARD BLOCK
                 if (!isPlayingRef.current || index >= segments.length || (!isUnlocked && totalSeconds >= TRIAL_LIMIT)) {
                     if (!isUnlocked && totalSeconds >= TRIAL_LIMIT) setShowPaywall(true);
                     return;
                 }
-
                 setCurrentIdx(index);
                 const seg = segments[index];
                 const voice = seg.type === 'narrator' ? voiceMap.Narrator : (voiceMap[seg.character] || "Abby");
-                
                 try {
                     const buffer = await fetchAudio(seg.text, voice);
                     if (!isPlayingRef.current) return;
@@ -238,32 +235,16 @@
                 }
             };
 
-            const VoiceList = () => (
-                <>
-                    <optgroup label="Narrators">{INWORLD_VOICES.narrators.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
-                    <optgroup label="Female">{INWORLD_VOICES.female.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
-                    <optgroup label="Male">{INWORLD_VOICES.male.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
-                </>
-            );
-
             return (
                 <div className="flex flex-col h-screen relative font-mono">
                     {showPaywall && (
                         <div className="paywall-overlay">
-                            <div className="max-w-md w-full border-[8px] border-black bg-white p-10 shadow-[20px_20px_0px_0px_rgba(0,0,0,1)] text-center">
-                                <h2 className="text-4xl font-black uppercase mb-4 italic tracking-tighter">Script Locked</h2>
-                                <p className="font-bold text-sm mb-10 leading-tight uppercase italic text-gray-600">Trial limit of 30 seconds reached. Please pay once to unlock the full script for professional table reading.</p>
+                            <div className="max-w-md w-full border-[8px] border-black bg-white p-12 shadow-[20px_20px_0px_0px_rgba(0,0,0,1)] text-center">
+                                <h2 className="text-4xl font-black uppercase mb-6 italic tracking-tighter">Script Locked</h2>
+                                <p className="font-bold text-sm mb-12 leading-tight uppercase italic text-gray-700">The 30-second trial is over. Contribute to the cost of professional voices to unlock this full script.</p>
                                 
-                                {/* PAYPAL COMPONENT */}
-                                <div id="paypal-button-container" className="mb-10 flex justify-center min-h-[150px]"></div>
-
-                                <div className="border-t-4 border-black pt-6">
-                                    <p className="text-[10px] font-black uppercase mb-3">Or enter your personal access code</p>
-                                    <div className="flex gap-2">
-                                        <input type="password" value={unlockCode} onChange={(e) => setUnlockCode(e.target.value)} placeholder="ENTER CODE" className="flex-1 border-4 border-black p-3 text-sm font-black outline-none uppercase" />
-                                        <button onClick={() => unlockCode.toLowerCase() === 'frank2026' && (setIsUnlocked(true), setShowPaywall(false))} className="bg-black text-white px-6 font-black text-xs uppercase hover:bg-gray-800">Unlock</button>
-                                    </div>
-                                </div>
+                                {/* THIS IS THE PAYPAL BUTTON CONTAINER */}
+                                <div id="paypal-button-container" className="flex justify-center min-h-[150px]"></div>
                             </div>
                         </div>
                     )}
@@ -271,9 +252,9 @@
                     <header className="border-b-4 border-black p-4 flex justify-between items-center bg-white shrink-0 shadow-sm z-10">
                         <h1 className="text-2xl font-black uppercase tracking-tighter italic">Scriptread</h1>
                         <div className="flex gap-3">
-                            {!isUnlocked && <div className="text-[10px] font-black px-2 py-2 bg-yellow-400 border-2 border-black uppercase tracking-tighter self-center">Trial: {Math.round(totalSeconds)}s / 30s</div>}
-                            <button onClick={masterAndExport} className="px-4 py-2 border-4 border-black font-black text-[10px] hover:bg-black hover:text-white transition-all uppercase tracking-tighter">{isExporting ? `${exportProgress}%` : "Master & Export"}</button>
-                            <label className="px-4 py-2 bg-black text-white font-black text-[10px] cursor-pointer hover:invert border-2 border-black transition-all uppercase tracking-tighter">Load PDF <input type="file" className="hidden" accept=".pdf" onChange={(e) => {
+                            {!isUnlocked && <div className="text-[10px] font-black px-2 py-2 bg-yellow-400 border-2 border-black uppercase self-center">Trial: {Math.round(totalSeconds)}s / 30s</div>}
+                            <button onClick={masterAndExport} className="px-4 py-2 border-4 border-black font-black text-[10px] hover:bg-black hover:text-white transition-all uppercase">{isExporting ? `${exportProgress}%` : "Master & Export"}</button>
+                            <label className="px-4 py-2 bg-black text-white font-black text-[10px] cursor-pointer hover:invert border-2 border-black transition-all uppercase">Load PDF <input type="file" className="hidden" accept=".pdf" onChange={(e) => {
                                 const file = e.target.files[0]; if (!file) return; stopAudio(); const reader = new FileReader();
                                 reader.onload = async () => {
                                     const pdf = await window.pdfjsLib.getDocument({ data: reader.result }).promise;
@@ -291,21 +272,25 @@
                     <div className="flex-1 flex overflow-hidden">
                         <aside className="w-64 border-r-4 border-black bg-gray-50 overflow-y-auto shrink-0 custom-scrollbar pb-20">
                             <div className="p-2 bg-black text-white font-black text-[10px] uppercase italic text-center tracking-widest sticky top-0 z-50">Cast</div>
-                            <div className="p-4 space-y-4 pt-4">
+                            <div className="p-4 space-y-8 pt-4">
                                 <div className="p-2 border-2 border-black bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
                                     <p className="text-[9px] font-black text-gray-400 uppercase">Narrator</p>
                                     <select className="w-full text-[10px] font-bold outline-none cursor-pointer" value={voiceMap.Narrator} onChange={(e) => setVoiceMap({...voiceMap, Narrator: e.target.value})}>
-                                        <VoiceList />
+                                        <optgroup label="Narrators">{INWORLD_VOICES.narrators.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
+                                        <optgroup label="Female">{INWORLD_VOICES.female.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
+                                        <optgroup label="Male">{INWORLD_VOICES.male.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
                                     </select>
                                 </div>
                                 {characters.map(char => (
                                     <div key={char} className="p-2 border-2 border-black bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
                                         <p className="text-[9px] font-black uppercase tracking-tight">{char}</p>
                                         <select className="w-full text-[10px] font-bold outline-none cursor-pointer" value={voiceMap[char] || "Abby"} onChange={(e) => setVoiceMap({...voiceMap, [char]: e.target.value})}>
-                                            <VoiceList />
+                                            <optgroup label="Female">{INWORLD_VOICES.female.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
+                                            <optgroup label="Male">{INWORLD_VOICES.male.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
                                         </select>
                                     </div>
                                 ))}
+                                <div className="h-40"></div>
                             </div>
                         </aside>
 
@@ -321,7 +306,7 @@
 
                     <footer className="shrink-0 border-t-4 border-black p-6 bg-white flex justify-center items-center gap-10">
                         <button onClick={() => { stopAudio(); setCurrentIdx(Math.max(0, currentIdx - 1)); }}><svg width="32" height="32" viewBox="0 0 24 24" fill="black"><polygon points="11 19 2 12 11 5 11 19"/><polygon points="22 19 13 12 22 5 22 19"/></svg></button>
-                        <button onClick={togglePlay} className="bg-black text-white p-5 rounded-full shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all active:translate-y-1">
+                        <button onClick={togglePlay} className="bg-black text-white p-5 rounded-full shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-y-1 transition-all">
                             {isPlaying ? <svg width="32" height="32" viewBox="0 0 24 24" fill="white"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> : <svg width="32" height="32" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg>}
                         </button>
                         <button onClick={() => { stopAudio(); setCurrentIdx(Math.min(segments.length - 1, currentIdx + 1)); }}><svg width="32" height="32" viewBox="0 0 24 24" fill="black"><polygon points="13 19 22 12 13 5 13 19"/><polygon points="2 19 11 12 2 5 2 19"/></svg></button>
