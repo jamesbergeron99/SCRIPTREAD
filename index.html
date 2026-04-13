@@ -38,9 +38,8 @@
             align-items: center; 
             justify-content: center; 
             height: 100%;
-            background: #f9f9f9;
-            border: 4px solid black;
-            margin: 20px;
+            background: #fff;
+            padding: 40px;
         }
     </style>
 </head>
@@ -79,7 +78,7 @@
                 audioContext.current = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
             }, []);
 
-            // MONITOR TRIAL TIME
+            // HARD TRIAL TRIGGER
             useEffect(() => {
                 if (!isUnlocked && totalSeconds >= TRIAL_LIMIT) {
                     stopAudio();
@@ -87,25 +86,30 @@
                 }
             }, [totalSeconds, isUnlocked]);
 
-            // HARD-RENDER PAYPAL WHEN TRIGGERED
+            // RELENTLESS PAYPAL INITIALIZER
             useEffect(() => {
                 if (showPaywall && window.paypal) {
-                    const renderButton = () => {
-                        const container = document.getElementById('paypal-button-container');
-                        if (container && container.innerHTML === '') {
+                    const renderPaypal = () => {
+                        const target = document.getElementById('paypal-button-container');
+                        if (target) {
+                            target.innerHTML = ''; // Clear any previous junk
                             window.paypal.HostedButtons({
                                 hostedButtonId: "BAAK4FNNEoRhK_jriVX-V3QO-iWVuGEuUdAmvgVHX6pluidxESAwHaGB_fm7WGrOSxe-6VcmE6xZvnvdjU",
-                                onApprove: () => { setIsUnlocked(true); setShowPaywall(false); }
+                                onApprove: () => { 
+                                    setIsUnlocked(true); 
+                                    setShowPaywall(false); 
+                                }
                             }).render("#paypal-button-container");
                         }
                     };
-                    const interval = setInterval(() => {
+                    // Keep trying until the container is found and rendered
+                    const retry = setInterval(() => {
                         if (document.getElementById('paypal-button-container')) {
-                            renderButton();
-                            clearInterval(interval);
+                            renderPaypal();
+                            clearInterval(retry);
                         }
-                    }, 100);
-                    return () => clearInterval(interval);
+                    }, 200);
+                    return () => clearInterval(retry);
                 }
             }, [showPaywall]);
 
@@ -130,7 +134,7 @@
 
             const previewVoice = async (vId) => {
                 if (audioContext.current.state === 'suspended') audioContext.current.resume();
-                const buffer = await fetchAudio("Voice preview.", vId);
+                const buffer = await fetchAudio("Voice check.", vId);
                 const source = audioContext.current.createBufferSource();
                 source.buffer = buffer;
                 source.connect(audioContext.current.destination);
@@ -146,7 +150,7 @@
                 lines.forEach(line => {
                     let text = line.text.trim();
                     const x = line.x;
-                    // REFINED PAGE NUMBER FILTER
+                    // STRICT PAGE NUMBER FILTER
                     if (!text || text.match(/^\d+$/) || text.match(/^PAGE\s+\d+$/i) || text.match(/^\d+\s*\.$/)) return;
 
                     text = text.replace(/\([^)]*\)/g, "").trim();
@@ -233,9 +237,9 @@
             return (
                 <div className="flex flex-col h-screen relative font-mono">
                     <header className="border-b-4 border-black p-4 flex justify-between items-center bg-white shrink-0 z-50">
-                        <h1 className="text-2xl font-black uppercase tracking-tighter italic text-black">Scriptread</h1>
+                        <h1 className="text-2xl font-black uppercase tracking-tighter italic">Scriptread</h1>
                         <div className="flex gap-3">
-                            {!isUnlocked && <div className="text-[10px] font-black px-2 py-2 bg-yellow-400 border-2 border-black uppercase self-center tracking-tighter">Trial: {Math.round(totalSeconds)}s / 30s</div>}
+                            {!isUnlocked && <div className="text-[10px] font-black px-2 py-2 bg-yellow-400 border-2 border-black uppercase tracking-tighter self-center">Trial: {Math.round(totalSeconds)}s / 30s</div>}
                             <button onClick={masterAndExport} className="px-4 py-2 border-4 border-black font-black text-[10px] hover:bg-black hover:text-white transition-all uppercase tracking-tighter">{isExporting ? `${exportProgress}%` : "Master & Export"}</button>
                             <label className="px-4 py-2 bg-black text-white font-black text-[10px] cursor-pointer hover:invert border-2 border-black transition-all uppercase tracking-tighter">Load PDF <input type="file" className="hidden" accept=".pdf" onChange={(e) => {
                                 const file = e.target.files[0]; if (!file) return; stopAudio(); const reader = new FileReader();
@@ -253,13 +257,13 @@
                     </header>
 
                     <div className="flex-1 flex overflow-hidden">
-                        <aside className="w-64 border-r-4 border-black bg-gray-50 overflow-y-auto shrink-0 custom-scrollbar pb-[1000px]">
+                        <aside className="w-64 border-r-4 border-black bg-gray-50 overflow-y-auto shrink-0 custom-scrollbar pb-[800px]">
                             <div className="p-2 bg-black text-white font-black text-[10px] uppercase italic text-center tracking-widest sticky top-0 z-50">Cast</div>
                             <div className="p-4 space-y-6">
                                 <div className="p-2 border-2 border-black bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
                                     <div className="flex justify-between items-center mb-1">
                                         <p className="text-[9px] font-black text-gray-400 uppercase">Narrator</p>
-                                        <button onClick={() => previewVoice(voiceMap.Narrator)} className="text-[8px] font-black underline uppercase hover:text-black">Hear</button>
+                                        <button onClick={() => previewVoice(voiceMap.Narrator)} className="text-[8px] font-black underline uppercase">Hear</button>
                                     </div>
                                     <select onMouseDown={(e) => { e.target.parentElement.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} value={voiceMap.Narrator} onChange={(e) => setVoiceMap({...voiceMap, Narrator: e.target.value})}><VoiceList /></select>
                                 </div>
@@ -267,7 +271,7 @@
                                     <div key={char} className="p-2 border-2 border-black bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
                                         <div className="flex justify-between items-center mb-1">
                                             <p className="text-[9px] font-black uppercase tracking-tight">{char}</p>
-                                            <button onClick={() => previewVoice(voiceMap[char] || "Abby")} className="text-[8px] font-black underline uppercase hover:text-black">Hear</button>
+                                            <button onClick={() => previewVoice(voiceMap[char] || "Abby")} className="text-[8px] font-black underline uppercase">Hear</button>
                                         </div>
                                         <select onMouseDown={(e) => { e.target.parentElement.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} value={voiceMap[char] || "Abby"} onChange={(e) => setVoiceMap({...voiceMap, [char]: e.target.value})}><VoiceList /></select>
                                     </div>
@@ -278,9 +282,9 @@
                         <main className="flex-1 overflow-y-auto bg-white custom-scrollbar">
                             {showPaywall ? (
                                 <div className="pay-screen">
-                                    <p className="font-black text-sm mb-10 uppercase tracking-widest text-center px-10">Trial over. Please support the professional voices to continue reading.</p>
-                                    <div id="paypal-button-container"></div>
-                                    <button onClick={() => setShowPaywall(false)} className="mt-12 text-[10px] font-black uppercase underline">Close and Exit</button>
+                                    <p className="font-black text-sm mb-6 uppercase tracking-widest text-center">Support these professional voices to read the full script.</p>
+                                    <div id="paypal-button-container" className="min-w-[300px]"></div>
+                                    <button onClick={() => setShowPaywall(false)} className="mt-10 text-[10px] font-black uppercase underline">Go Back</button>
                                 </div>
                             ) : (
                                 <div className="p-8 pb-32">
