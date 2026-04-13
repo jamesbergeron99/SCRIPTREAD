@@ -14,13 +14,17 @@
         body { font-family: 'Space+Mono', monospace; overflow: hidden; height: 100vh; background: #fff; }
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: black; }
+        
+        /* DROPDOWN FIX: Forced Downward Visibility */
         select { 
             appearance: none; 
             background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%223%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M6%209l6%206%206-6%22%3E%3C%2Fpath%3E%3C%2Fsvg%3E"); 
             background-repeat: no-repeat; background-position: right 0.5rem center; padding-right: 1.5rem;
             width: 100%; border: 2px solid black; font-size: 11px; font-weight: 700; background-color: white; cursor: pointer;
         }
+
         .pay-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; background: #fff; text-align: center; padding: 40px; }
+        #paypal-button-container { min-height: 150px; width: 300px; margin: 20px 0; }
     </style>
 </head>
 <body>
@@ -62,17 +66,20 @@
                 if (!isUnlocked && totalSeconds >= TRIAL_LIMIT) { stopAudio(); setShowPaywall(true); }
             }, [totalSeconds, isUnlocked]);
 
-            // DYNAMIC PAYPAL LOADER: Injects script ONLY when paywall is shown
+            // DYNAMIC SCRIPT INJECTION: The only way to guarantee PayPal sees the container
             useEffect(() => {
-                if (showPaywall) {
+                if (showPaywall && !document.getElementById('paypal-sdk')) {
                     const script = document.createElement('script');
+                    script.id = 'paypal-sdk';
                     script.src = "https://www.paypal.com/sdk/js?client-id=BAAK4FNNEoRhK_jriVX-V3QO-iWVuGEuUdAmvgVHX6pluidxESAwHaGB_fm7WGrOSxe-6VcmE6xZvnvdjU&components=hosted-buttons&disable-funding=venmo&currency=CAD";
                     script.async = true;
                     script.onload = () => {
-                        window.paypal.HostedButtons({
-                            hostedButtonId: "BAAK4FNNEoRhK_jriVX-V3QO-iWVuGEuUdAmvgVHX6pluidxESAwHaGB_fm7WGrOSxe-6VcmE6xZvnvdjU",
-                            onApprove: () => { setIsUnlocked(true); setShowPaywall(false); }
-                        }).render("#paypal-button-container");
+                        if (window.paypal && window.paypal.HostedButtons) {
+                            window.paypal.HostedButtons({
+                                hostedButtonId: "BAAK4FNNEoRhK_jriVX-V3QO-iWVuGEuUdAmvgVHX6pluidxESAwHaGB_fm7WGrOSxe-6VcmE6xZvnvdjU",
+                                onApprove: () => { setIsUnlocked(true); setShowPaywall(false); }
+                            }).render("#paypal-button-container");
+                        }
                     };
                     document.body.appendChild(script);
                 }
@@ -95,7 +102,7 @@
 
             const previewVoice = async (vId) => {
                 if (audioContext.current.state === 'suspended') audioContext.current.resume();
-                const buffer = await fetchAudio("Voice check.", vId);
+                const buffer = await fetchAudio("Testing voice.", vId);
                 const source = audioContext.current.createBufferSource();
                 source.buffer = buffer;
                 source.connect(audioContext.current.destination);
@@ -111,7 +118,7 @@
                 lines.forEach(line => {
                     let text = line.text.trim();
                     const x = line.x;
-                    // PAGE NUMBER FILTER: Kills page numbers from cast list
+                    // PAGE NUMBER FILTER: Prevents page numbers from being added to Cast
                     if (!text || /^\d+$/.test(text) || /^PAGE\s+\d+$/i.test(text) || /^\d+\.$/.test(text)) return;
                     text = text.replace(/\([^)]*\)/g, "").trim();
                     if (!text) return;
@@ -196,7 +203,7 @@
                     <header className="border-b-4 border-black p-4 flex justify-between items-center bg-white shrink-0 z-50 shadow-sm">
                         <h1 className="text-2xl font-black uppercase tracking-tighter italic">Scriptread</h1>
                         <div className="flex gap-3">
-                            {!isUnlocked && <div className="text-[10px] font-black px-2 py-2 bg-yellow-400 border-2 border-black uppercase tracking-tighter self-center">Trial: {Math.round(totalSeconds)}s / 30s</div>}
+                            {!isUnlocked && <div className="text-[10px] font-black px-2 py-2 bg-yellow-400 border-2 border-black uppercase self-center tracking-tighter">Trial: {Math.round(totalSeconds)}s / 30s</div>}
                             <button onClick={masterAndExport} className="px-4 py-2 border-4 border-black font-black text-[10px] hover:bg-black hover:text-white transition-all uppercase tracking-tighter">{isExporting ? `${exportProgress}%` : "Master & Export"}</button>
                             <label className="px-4 py-2 bg-black text-white font-black text-[10px] cursor-pointer hover:invert border-2 border-black transition-all uppercase tracking-tighter">Load PDF <input type="file" className="hidden" accept=".pdf" onChange={(e) => {
                                 const file = e.target.files[0]; if (!file) return; stopAudio(); const reader = new FileReader();
@@ -241,8 +248,8 @@
                                 <div className="pay-screen">
                                     <h2 className="text-xl font-black uppercase mb-4 tracking-tighter">Support the Production</h2>
                                     <p className="font-bold text-sm mb-8 leading-tight uppercase italic text-gray-600 max-w-sm">To cover the cost of high-quality AI narration and continue the table read, please consider a donation of $2.50 per script.</p>
-                                    <div id="paypal-button-container" className="min-w-[300px]"></div>
-                                    <button onClick={() => setShowPaywall(false)} className="mt-12 text-[10px] font-black uppercase underline">Go Back</button>
+                                    <div id="paypal-button-container"></div>
+                                    <button onClick={() => setShowPaywall(false)} className="mt-12 text-[10px] font-black uppercase underline">Close and Go Back</button>
                                 </div>
                             ) : (
                                 <div className="p-8 pb-32">
