@@ -9,20 +9,40 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    
     <script src="https://www.paypal.com/sdk/js?client-id=BAAK4FNNEoRhK_jriVX-V3QO-iWVuGEuUdAmvgVHX6pluidxESAwHaGB_fm7WGrOSxe-6VcmE6xZvnvdjU&components=hosted-buttons&disable-funding=venmo&currency=CAD"></script>
+    
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
-        body { font-family: 'Space+Mono', monospace; overflow: hidden; height: 100vh; background: #fff; color: black; }
+        body { font-family: 'Space+Mono', monospace; overflow: hidden; height: 100vh; background: #fff; }
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: black; }
+        
         select { 
             appearance: none; 
             background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%223%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M6%209l6%206%206-6%22%3E%3C%2Fpath%3E%3C%2Fsvg%3E"); 
             background-repeat: no-repeat; 
             background-position: right 0.5rem center; 
-            padding-right: 1.5rem; width: 100%; border: 2px solid black; font-size: 10px; font-weight: 700; background-color: white; cursor: pointer; 
+            padding-right: 1.5rem;
+            width: 100%;
+            border: 2px solid black;
+            font-size: 11px;
+            font-weight: 700;
+            background-color: white;
+            cursor: pointer;
         }
-        .paywall-overlay { position: fixed; inset: 0; background: white; z-index: 999999; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+
+        .pay-screen { 
+            position: absolute;
+            inset: 0;
+            display: flex; 
+            flex-direction: column;
+            align-items: center; 
+            justify-content: center; 
+            background: white;
+            z-index: 99999;
+            padding: 20px;
+        }
     </style>
 </head>
 <body>
@@ -46,8 +66,6 @@
             const [isUnlocked, setIsUnlocked] = useState(false);
             const [totalSeconds, setTotalSeconds] = useState(0);
             const [showPaywall, setShowPaywall] = useState(false);
-            const [isExporting, setIsExporting] = useState(false);
-            const [exportProgress, setExportProgress] = useState(0);
 
             const audioContext = useRef(null);
             const activeSource = useRef(null);
@@ -61,28 +79,35 @@
             }, []);
 
             useEffect(() => {
-                if (!isUnlocked && totalSeconds >= TRIAL_LIMIT) { stopAudio(); setShowPaywall(true); }
+                if (!isUnlocked && totalSeconds >= TRIAL_LIMIT) {
+                    stopAudio();
+                    setShowPaywall(true);
+                }
             }, [totalSeconds, isUnlocked]);
 
+            // RELENTLESS PAYPAL INJECTION
             useEffect(() => {
                 if (showPaywall && window.paypal) {
-                    const renderBtn = () => {
-                        const container = document.getElementById('paypal-button-container');
-                        if (container) {
-                            container.innerHTML = '';
+                    const renderPaypal = () => {
+                        const target = document.getElementById('paypal-button-container');
+                        if (target) {
+                            target.innerHTML = ''; 
                             window.paypal.HostedButtons({
                                 hostedButtonId: "BAAK4FNNEoRhK_jriVX-V3QO-iWVuGEuUdAmvgVHX6pluidxESAwHaGB_fm7WGrOSxe-6VcmE6xZvnvdjU",
                                 onApprove: () => { setIsUnlocked(true); setShowPaywall(false); }
                             }).render("#paypal-button-container");
                         }
                     };
-                    setTimeout(renderBtn, 500);
+                    setTimeout(renderPaypal, 500);
                 }
             }, [showPaywall]);
 
             const stopAudio = () => {
                 isPlayingRef.current = false; setIsPlaying(false);
-                if (activeSource.current) { try { activeSource.current.stop(); } catch(e) {} activeSource.current = null; }
+                if (activeSource.current) {
+                    try { activeSource.current.stop(); } catch(e) {}
+                    activeSource.current = null;
+                }
             };
 
             const fetchAudio = async (text, voiceId) => {
@@ -97,13 +122,11 @@
 
             const previewVoice = async (vId) => {
                 if (audioContext.current.state === 'suspended') audioContext.current.resume();
-                try {
-                    const buffer = await fetchAudio("Testing voice.", vId);
-                    const source = audioContext.current.createBufferSource();
-                    source.buffer = buffer;
-                    source.connect(audioContext.current.destination);
-                    source.start();
-                } catch(e) { console.error(e); }
+                const buffer = await fetchAudio("Testing voice.", vId);
+                const source = audioContext.current.createBufferSource();
+                source.buffer = buffer;
+                source.connect(audioContext.current.destination);
+                source.start();
             };
 
             const parseScript = (lines) => {
@@ -115,7 +138,7 @@
                 lines.forEach(line => {
                     let text = line.text.trim();
                     const x = line.x;
-                    // PAGE NUMBER KILLER
+                    // STRICT PAGE NUMBER KILLER
                     const isPageNum = /^\d+$/.test(text) || /^PAGE\s+\d+$/i.test(text) || /^\d+\.$/.test(text);
                     if (!text || isPageNum) return;
 
@@ -123,7 +146,7 @@
                     if (!text) return;
 
                     const expandedText = text.replace(/\bINT\b\.?/gi, "Interior").replace(/\bEXT\b\.?/gi, "Exterior");
-                    const isSlug = expandedText.startsWith("Interior") || expandedText.startsWith("Exterior");
+                    const isSlug = text.toUpperCase().startsWith("INT.") || text.toUpperCase().startsWith("EXT.");
                     const isCenteredChar = x > 180 && text === text.toUpperCase() && text.length < 30 && !isSlug;
 
                     if (isSlug) { flushAction(); finalBlocks.push({ type: 'narrator', text: expandedText }); }
@@ -170,9 +193,10 @@
             return (
                 <div className="flex flex-col h-screen relative font-mono">
                     {showPaywall && (
-                        <div className="paywall-overlay">
-                            <div id="paypal-button-container"></div>
-                            <button onClick={() => setShowPaywall(false)} className="mt-8 text-[10px] font-black underline uppercase">Close</button>
+                        <div className="pay-screen">
+                            <p className="font-black uppercase tracking-tighter mb-8 text-center">Trial ended. Contribute to unlock professional voices.</p>
+                            <div id="paypal-button-container" style={{minWidth: '300px'}}></div>
+                            <button onClick={() => setShowPaywall(false)} className="mt-12 text-[10px] font-black uppercase underline">Go Back</button>
                         </div>
                     )}
 
@@ -180,7 +204,7 @@
                         <h1 className="text-2xl font-black uppercase tracking-tighter italic">Scriptread</h1>
                         <div className="flex gap-3">
                             {!isUnlocked && <div className="text-[10px] font-black px-2 py-2 bg-yellow-400 border-2 border-black uppercase tracking-tighter self-center">Trial: {Math.round(totalSeconds)}s / 30s</div>}
-                            <label className="px-4 py-2 bg-black text-white font-black text-[10px] cursor-pointer hover:invert border-2 border-black transition-all uppercase">Load PDF <input type="file" className="hidden" accept=".pdf" onChange={(e) => {
+                            <label className="px-4 py-2 bg-black text-white font-black text-[10px] cursor-pointer hover:invert border-2 border-black transition-all uppercase tracking-tighter">Load PDF <input type="file" className="hidden" accept=".pdf" onChange={(e) => {
                                 const file = e.target.files[0]; if (!file) return; stopAudio(); const reader = new FileReader();
                                 reader.onload = async () => {
                                     const pdf = await window.pdfjsLib.getDocument({ data: reader.result }).promise;
@@ -204,7 +228,7 @@
                                         <p className="text-[9px] font-black text-gray-400 uppercase">Narrator</p>
                                         <button onClick={() => previewVoice(voiceMap.Narrator)} className="text-[8px] font-black underline uppercase">Hear</button>
                                     </div>
-                                    <select onFocus={(e) => e.target.parentElement.scrollIntoView({ behavior: 'smooth' })} value={voiceMap.Narrator} onChange={(e) => setVoiceMap({...voiceMap, Narrator: e.target.value})}><VoiceList /></select>
+                                    <select onMouseDown={(e) => { e.target.parentElement.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} value={voiceMap.Narrator} onChange={(e) => setVoiceMap({...voiceMap, Narrator: e.target.value})}><VoiceList /></select>
                                 </div>
                                 {characters.map(char => (
                                     <div key={char} className="p-2 border-2 border-black bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
@@ -212,7 +236,7 @@
                                             <p className="text-[9px] font-black uppercase tracking-tight">{char}</p>
                                             <button onClick={() => previewVoice(voiceMap[char] || "Abby")} className="text-[8px] font-black underline uppercase">Hear</button>
                                         </div>
-                                        <select onFocus={(e) => e.target.parentElement.scrollIntoView({ behavior: 'smooth' })} value={voiceMap[char] || "Abby"} onChange={(e) => setVoiceMap({...voiceMap, [char]: e.target.value})}><VoiceList /></select>
+                                        <select onMouseDown={(e) => { e.target.parentElement.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} value={voiceMap[char] || "Abby"} onChange={(e) => setVoiceMap({...voiceMap, [char]: e.target.value})}><VoiceList /></select>
                                     </div>
                                 ))}
                             </div>
@@ -228,9 +252,9 @@
                         </main>
                     </div>
 
-                    <footer className="shrink-0 border-t-4 border-black p-6 bg-white flex justify-center items-center gap-10 shadow-sm">
+                    <footer className="shrink-0 border-t-4 border-black p-6 bg-white flex justify-center items-center gap-10">
                         <button onClick={() => { stopAudio(); setCurrentIdx(Math.max(0, currentIdx - 1)); }}><svg width="32" height="32" viewBox="0 0 24 24" fill="black"><polygon points="11 19 2 12 11 5 11 19"/><polygon points="22 19 13 12 22 5 22 19"/></svg></button>
-                        <button onClick={togglePlay} className="bg-black text-white p-5 rounded-full shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all active:translate-y-1">
+                        <button onClick={togglePlay} className="bg-black text-white p-5 rounded-full shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-y-1 transition-all">
                             {isPlaying ? <svg width="32" height="32" viewBox="0 0 24 24" fill="white"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> : <svg width="32" height="32" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg>}
                         </button>
                         <button onClick={() => { stopAudio(); setCurrentIdx(Math.min(segments.length - 1, currentIdx + 1)); }}><svg width="32" height="32" viewBox="0 0 24 24" fill="black"><polygon points="13 19 22 12 13 5 13 19"/><polygon points="2 19 11 12 2 5 2 19"/></svg></button>
