@@ -18,6 +18,7 @@
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: black; }
         
+        /* DROPDOWN FIX: Ensures it stays in view */
         select { 
             appearance: none; 
             background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%223%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M6%209l6%206%206-6%22%3E%3C%2Fpath%3E%3C%2Fsvg%3E"); 
@@ -32,14 +33,21 @@
             cursor: pointer;
         }
 
+        #paypal-button-container {
+            margin-top: 20px;
+            min-height: 150px;
+            width: 300px;
+        }
+
         .pay-screen { 
+            position: absolute;
+            inset: 0;
             display: flex; 
             flex-direction: column;
             align-items: center; 
             justify-content: center; 
-            height: 100%;
-            background: #fff;
-            padding: 40px;
+            background: white;
+            z-index: 999999;
         }
     </style>
 </head>
@@ -64,21 +72,18 @@
             const [isUnlocked, setIsUnlocked] = useState(false);
             const [totalSeconds, setTotalSeconds] = useState(0);
             const [showPaywall, setShowPaywall] = useState(false);
-            const [isExporting, setIsExporting] = useState(false);
-            const [exportProgress, setExportProgress] = useState(0);
 
             const audioContext = useRef(null);
             const activeSource = useRef(null);
             const isPlayingRef = useRef(false);
             const TRIAL_LIMIT = 30;
-            const API_KEY = window.REACT_APP_INWORLD_KEY || "NDJKcTE4NWZnTG8wOW9Gd3BVWWhhTW9pWlU4dTJ3NU46NE8wenZzV2drTjhRRjlJZVl6aldhZ0lWS0VCYlpFckl5RWJ1a2tTd3Fwb2pVT1BGMGN2OVg4TERtQ1dHWFZ2Yw==";
+            const API_KEY = "NDJKcTE4NWZnTG8wOW9Gd3BVWWhhTW9pWlU4dTJ3NU46NE8wenZzV2drTjhRRjlJZVl6aldhZ0lWS0VCYlpFckl5RWJ1a2tTd3Fwb2pVT1BGMGN2OVg4TERtQ1dHWFZ2Yw==";
 
             useEffect(() => {
                 window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
                 audioContext.current = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
             }, []);
 
-            // HARD TRIAL TRIGGER
             useEffect(() => {
                 if (!isUnlocked && totalSeconds >= TRIAL_LIMIT) {
                     stopAudio();
@@ -86,37 +91,23 @@
                 }
             }, [totalSeconds, isUnlocked]);
 
-            // RELENTLESS PAYPAL INITIALIZER
+            // PAYPAL FORCE-LOADER
             useEffect(() => {
                 if (showPaywall && window.paypal) {
-                    const renderPaypal = () => {
-                        const target = document.getElementById('paypal-button-container');
-                        if (target) {
-                            target.innerHTML = ''; // Clear any previous junk
-                            window.paypal.HostedButtons({
-                                hostedButtonId: "BAAK4FNNEoRhK_jriVX-V3QO-iWVuGEuUdAmvgVHX6pluidxESAwHaGB_fm7WGrOSxe-6VcmE6xZvnvdjU",
-                                onApprove: () => { 
-                                    setIsUnlocked(true); 
-                                    setShowPaywall(false); 
-                                }
-                            }).render("#paypal-button-container");
-                        }
-                    };
-                    // Keep trying until the container is found and rendered
-                    const retry = setInterval(() => {
-                        if (document.getElementById('paypal-button-container')) {
-                            renderPaypal();
-                            clearInterval(retry);
-                        }
-                    }, 200);
-                    return () => clearInterval(retry);
+                    const btn = document.getElementById('paypal-button-container');
+                    if (btn) {
+                        btn.innerHTML = '';
+                        window.paypal.HostedButtons({
+                            hostedButtonId: "BAAK4FNNEoRhK_jriVX-V3QO-iWVuGEuUdAmvgVHX6pluidxESAwHaGB_fm7WGrOSxe-6VcmE6xZvnvdjU",
+                            onApprove: () => { setIsUnlocked(true); setShowPaywall(false); }
+                        }).render("#paypal-button-container");
+                    }
                 }
             }, [showPaywall]);
 
             const stopAudio = () => {
                 isPlayingRef.current = false; setIsPlaying(false);
                 if (activeSource.current) {
-                    activeSource.current.onended = null;
                     try { activeSource.current.stop(); } catch(e) {}
                     activeSource.current = null;
                 }
@@ -134,7 +125,7 @@
 
             const previewVoice = async (vId) => {
                 if (audioContext.current.state === 'suspended') audioContext.current.resume();
-                const buffer = await fetchAudio("Voice check.", vId);
+                const buffer = await fetchAudio("Testing voice.", vId);
                 const source = audioContext.current.createBufferSource();
                 source.buffer = buffer;
                 source.connect(audioContext.current.destination);
@@ -150,7 +141,7 @@
                 lines.forEach(line => {
                     let text = line.text.trim();
                     const x = line.x;
-                    // STRICT PAGE NUMBER FILTER
+                    // STRICT PAGE NUMBER KILLER
                     if (!text || text.match(/^\d+$/) || text.match(/^PAGE\s+\d+$/i) || text.match(/^\d+\s*\.$/)) return;
 
                     text = text.replace(/\([^)]*\)/g, "").trim();
@@ -189,43 +180,6 @@
                 } catch (e) { if(isPlayingRef.current) playSegment(index + 1); }
             };
 
-            const masterAndExport = async () => {
-                if (!isUnlocked) { setShowPaywall(true); return; }
-                setIsExporting(true);
-                const buffers = [];
-                try {
-                    for (let i = 0; i < segments.length; i++) {
-                        setExportProgress(Math.round((i / segments.length) * 100));
-                        const buffer = await fetchAudio(segments[i].text, segments[i].type === 'narrator' ? voiceMap.Narrator : (voiceMap[segments[i].character] || "Abby"));
-                        buffers.push(buffer);
-                    }
-                    const totalLength = buffers.reduce((acc, b) => acc + b.length, 0);
-                    const masterBuffer = audioContext.current.createBuffer(1, totalLength, 24000);
-                    const channelData = masterBuffer.getChannelData(0);
-                    let offset = 0; buffers.forEach(b => { channelData.set(b.getChannelData(0), offset); offset += b.length; });
-                    const wavData = encodeWav(masterBuffer);
-                    const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([wavData], { type: 'audio/wav' }));
-                    link.download = "Scriptread_Master.wav"; link.click();
-                } catch (e) {}
-                setIsExporting(false);
-            };
-
-            const encodeWav = (buffer) => {
-                const length = buffer.length * 2; const view = new DataView(new ArrayBuffer(44 + length));
-                const writeString = (o, s) => { for (let i=0; i<s.length; i++) view.setUint8(o+i, s.charCodeAt(i)); };
-                writeString(0, 'RIFF'); view.setUint32(4, 36 + length, true); writeString(8, 'WAVE'); writeString(12, 'fmt ');
-                view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true); view.setUint32(24, 24000, true);
-                view.setUint32(28, 48000, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true); writeString(36, 'data'); view.setUint32(40, length, true);
-                const data = buffer.getChannelData(0); let offset = 44;
-                for (let i=0; i<data.length; i++, offset+=2) { const s = Math.max(-1, Math.min(1, data[i])); view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true); }
-                return view.buffer;
-            };
-
-            const togglePlay = () => {
-                if (isPlaying) { stopAudio(); }
-                else { if (audioContext.current.state === 'suspended') audioContext.current.resume(); isPlayingRef.current = true; setIsPlaying(true); playSegment(currentIdx === -1 ? 0 : currentIdx); }
-            };
-
             const VoiceList = () => (
                 <>
                     <optgroup label="Narrators">{INWORLD_VOICES.narrators.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
@@ -236,11 +190,17 @@
 
             return (
                 <div className="flex flex-col h-screen relative font-mono">
+                    {showPaywall && (
+                        <div className="pay-screen">
+                            <p className="font-black uppercase tracking-widest text-center mb-4">Support voices to continue reading.</p>
+                            <div id="paypal-button-container"></div>
+                        </div>
+                    )}
+
                     <header className="border-b-4 border-black p-4 flex justify-between items-center bg-white shrink-0 z-50">
                         <h1 className="text-2xl font-black uppercase tracking-tighter italic">Scriptread</h1>
                         <div className="flex gap-3">
-                            {!isUnlocked && <div className="text-[10px] font-black px-2 py-2 bg-yellow-400 border-2 border-black uppercase tracking-tighter self-center">Trial: {Math.round(totalSeconds)}s / 30s</div>}
-                            <button onClick={masterAndExport} className="px-4 py-2 border-4 border-black font-black text-[10px] hover:bg-black hover:text-white transition-all uppercase tracking-tighter">{isExporting ? `${exportProgress}%` : "Master & Export"}</button>
+                            {!isUnlocked && <div className="text-[10px] font-black px-2 py-2 bg-yellow-400 border-2 border-black uppercase self-center tracking-tighter">Trial: {Math.round(totalSeconds)}s / 30s</div>}
                             <label className="px-4 py-2 bg-black text-white font-black text-[10px] cursor-pointer hover:invert border-2 border-black transition-all uppercase tracking-tighter">Load PDF <input type="file" className="hidden" accept=".pdf" onChange={(e) => {
                                 const file = e.target.files[0]; if (!file) return; stopAudio(); const reader = new FileReader();
                                 reader.onload = async () => {
@@ -257,7 +217,7 @@
                     </header>
 
                     <div className="flex-1 flex overflow-hidden">
-                        <aside className="w-64 border-r-4 border-black bg-gray-50 overflow-y-auto shrink-0 custom-scrollbar pb-[800px]">
+                        <aside className="w-64 border-r-4 border-black bg-gray-50 overflow-y-auto shrink-0 custom-scrollbar pb-[1000px]">
                             <div className="p-2 bg-black text-white font-black text-[10px] uppercase italic text-center tracking-widest sticky top-0 z-50">Cast</div>
                             <div className="p-4 space-y-6">
                                 <div className="p-2 border-2 border-black bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
@@ -279,23 +239,13 @@
                             </div>
                         </aside>
 
-                        <main className="flex-1 overflow-y-auto bg-white custom-scrollbar">
-                            {showPaywall ? (
-                                <div className="pay-screen">
-                                    <p className="font-black text-sm mb-6 uppercase tracking-widest text-center">Support these professional voices to read the full script.</p>
-                                    <div id="paypal-button-container" className="min-w-[300px]"></div>
-                                    <button onClick={() => setShowPaywall(false)} className="mt-10 text-[10px] font-black uppercase underline">Go Back</button>
+                        <main className="flex-1 p-8 overflow-y-auto bg-white custom-scrollbar pb-32">
+                            {segments.map((seg, i) => (
+                                <div key={i} className={`p-6 border-2 mb-4 transition-all ${currentIdx === i ? 'bg-black text-white scale-[1.01]' : 'border-black opacity-30'}`}>
+                                    {seg.type === 'dialogue' && <p className="text-[10px] font-black uppercase mb-1">{seg.character}</p>}
+                                    <p className="text-sm font-bold uppercase leading-tight">{seg.text}</p>
                                 </div>
-                            ) : (
-                                <div className="p-8 pb-32">
-                                    {segments.map((seg, i) => (
-                                        <div key={i} className={`p-6 border-2 mb-4 transition-all ${currentIdx === i ? 'bg-black text-white scale-[1.01]' : 'border-black opacity-30'}`}>
-                                            {seg.type === 'dialogue' && <p className="text-[10px] font-black uppercase mb-1">{seg.character}</p>}
-                                            <p className="text-sm font-bold uppercase leading-tight">{seg.text}</p>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
+                            ))}
                         </main>
                     </div>
 
