@@ -1,8 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Scriptread Pro</title>
+    <meta charset="UTF-8"><title>Scriptread Pro</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -19,17 +18,12 @@
 </head>
 <body>
     <div id="root"></div>
-
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
-
-        // HARD-CODED KEY FOR IMMEDIATE FUNCTIONALITY
-        const API_KEY = "NDJKcTE4NWZnTG8wOW9Gd3BVWWhhTW9pWlU4dTJ3NU46NE8wenZzV2drTjhRRjlJZVl6aldhZ0lWS0VCYlpFckl5RWJ1a2tTd3Fwb2pVT1BGMGN2OVg4TERtQ1dHWFZ2Yw==";
-
         const INWORLD_VOICES = {
             narrators: [{ id: "Selene", name: "Selene" }, { id: "default-oglabcjnetcklcq7rghmbw__frank2", name: "Frank" }],
-            female: [{ id: "Abby", name: "Abby" }, { id: "Amina", name: "Amina" }, { id: "Anjali", name: "Anjali" }, { id: "Aoede", name: "Aoede" }, { id: "Ashley", name: "Ashley" }, { id: "Bianca", name: "Bianca" }, { id: "Celeste", name: "Celeste" }, { id: "Serena", name: "Serena" }, { id: "Sophie", name: "Sophie" }, { id: "Tessa", name: "Tessa" }, { id: "Victoria", name: "Victoria" }],
-            male: [{ id: "Alex", name: "Alex" }, { id: "Arjun", name: "Arjun" }, { id: "Avery", name: "Avery" }, { id: "Blake", name: "Blake" }, { id: "Brandon", name: "Brandon" }, { id: "Brian", name: "Brian" }, { id: "Carter", name: "Carter" }, { id: "Cedric", name: "Cedric" }, { id: "Damon", name: "Damon" }, { id: "Derek", name: "Derek" }, { id: "Ethan", name: "Ethan" }, { id: "Felix", name: "Felix" }, { id: "James", name: "James" }, { id: "Liam", name: "Liam" }, { id: "Mark", name: "Mark" }, { id: "Oliver", name: "Oliver" }, { id: "Sebastian", name: "Sebastian" }, { id: "Tyler", name: "Tyler" }, { id: "Victor", name: "Victor" }]
+            female: [{ id: "Abby", name: "Abby" }, { id: "Amina", name: "Amina" }, { id: "Victoria", name: "Victoria" }],
+            male: [{ id: "Alex", name: "Alex" }, { id: "James", name: "James" }, { id: "Victor", name: "Victor" }]
         };
 
         const Scriptread = () => {
@@ -43,7 +37,6 @@
             const [showPaywall, setShowPaywall] = useState(false);
             const [inputCode, setInputCode] = useState("");
             const [isExporting, setIsExporting] = useState(false);
-            const [exportProgress, setExportProgress] = useState(0);
 
             const audioContext = useRef(null);
             const activeSource = useRef(null);
@@ -65,22 +58,14 @@
             };
 
             const fetchAudio = async (text, voiceId) => {
-                const response = await fetch("https://api.inworld.ai/tts/v1/voice", {
+                // TALKS TO YOUR SECURE SERVER INSTEAD OF PUBLIC INTERNET
+                const response = await fetch("/api/tts", {
                     method: "POST",
-                    headers: { "Authorization": `Basic ${API_KEY}`, "Content-Type": "application/json" },
-                    body: JSON.stringify({ text, voiceId: voiceId || "Abby", modelId: "inworld-tts-1.5-max" })
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ text, voiceId })
                 });
                 const data = await response.json();
                 return await audioContext.current.decodeAudioData(new Uint8Array(atob(data.audioContent).split("").map(c => c.charCodeAt(0))).buffer);
-            };
-
-            const previewVoice = async (vId) => {
-                if (audioContext.current.state === 'suspended') audioContext.current.resume();
-                try {
-                    const buffer = await fetchAudio("Voice check.", vId);
-                    const source = audioContext.current.createBufferSource();
-                    source.buffer = buffer; source.connect(audioContext.current.destination); source.start();
-                } catch(e) {}
             };
 
             const parseScript = (lines) => {
@@ -92,9 +77,13 @@
                 lines.forEach(line => {
                     let text = line.text.trim();
                     if (!text || /^\d+$/.test(text) || /^PAGE\s+\d+$/i.test(text)) return;
+                    
+                    // RESTORED SLUG EXPANSION
+                    text = text.replace(/\bINT\b\.?/gi, "Interior").replace(/\bEXT\b\.?/gi, "Exterior");
                     text = text.replace(/\([^)]*\)/g, "").trim();
                     if (!text) return;
-                    const isSlug = text.toUpperCase().startsWith("INT.") || text.toUpperCase().startsWith("EXT.");
+
+                    const isSlug = text.startsWith("Interior") || text.startsWith("Exterior");
                     const isCenteredChar = line.x > 180 && text === text.toUpperCase() && text.length < 30 && !isSlug;
 
                     if (isSlug) { flushAction(); finalBlocks.push({ type: 'narrator', text }); }
@@ -119,19 +108,21 @@
                     const source = audioContext.current.createBufferSource();
                     source.buffer = buffer;
                     source.connect(audioContext.current.destination);
-                    source.onended = () => { setTotalSeconds(prev => prev + buffer.duration); if (isPlayingRef.current) playSegment(index + 1); };
+                    source.onended = () => { 
+                        setTotalSeconds(prev => prev + buffer.duration); 
+                        if (isPlayingRef.current) playSegment(index + 1); 
+                    };
                     activeSource.current = source; source.start();
                 } catch (e) { if(isPlayingRef.current) playSegment(index + 1); }
             };
 
             const masterAndExport = async () => {
                 if (!isUnlocked) { setShowPaywall(true); return; }
-                setIsExporting(true); setExportProgress(0);
+                setIsExporting(true);
                 const buffers = [];
                 try {
-                    for (let i = 0; i < segments.length; i++) {
-                        setExportProgress(Math.round((i / segments.length) * 100));
-                        const buffer = await fetchAudio(segments[i].text, segments[i].type === 'narrator' ? voiceMap.Narrator : (voiceMap[segments[i].character] || "Abby"));
+                    for (let seg of segments) {
+                        const buffer = await fetchAudio(seg.text, seg.type === 'narrator' ? voiceMap.Narrator : (voiceMap[seg.character] || "Abby"));
                         buffers.push(buffer);
                     }
                     const totalLength = buffers.reduce((acc, b) => acc + b.length, 0);
@@ -156,11 +147,6 @@
                 return view.buffer;
             };
 
-            const togglePlay = () => {
-                if (isPlaying) { stopAudio(); }
-                else { if (audioContext.current.state === 'suspended') audioContext.current.resume(); isPlayingRef.current = true; setIsPlaying(true); playSegment(currentIdx === -1 ? 0 : currentIdx); }
-            };
-
             const VoiceList = () => (
                 <>
                     <optgroup label="Narrators">{INWORLD_VOICES.narrators.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
@@ -173,9 +159,9 @@
                 <div className="flex flex-col h-screen relative font-mono text-black">
                     {showPaywall && (
                         <div className="pay-screen">
-                            <h2 className="text-2xl font-black uppercase mb-4 tracking-tighter italic">Support the Production</h2>
-                            <p className="font-bold text-sm mb-6 leading-tight uppercase italic text-gray-600 max-w-md">To continue this table read with high-quality AI narration, please consider a donation of $2.50 per script.</p>
-                            <a href="https://paypal.me/jamesbergeron1252/2.50" target="_blank" className="bg-black text-white px-8 py-4 font-black uppercase text-sm mb-8 hover:invert transition-all border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">Donate $2.50 via PayPal</a>
+                            <h2 className="text-2xl font-black uppercase mb-4 italic">Support the Production</h2>
+                            <p className="text-sm mb-6 uppercase italic text-gray-600 max-w-md">To continue this read with professional AI narration, please donate $2.50 per script.</p>
+                            <a href="https://paypal.me/jamesbergeron1252/2.50" target="_blank" className="bg-black text-white px-8 py-4 font-black uppercase text-sm mb-8 border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">Donate via PayPal</a>
                             <div className="border-t-4 border-black pt-6 w-64">
                                 <p className="text-[10px] font-black uppercase mb-2">Unlock Code:</p>
                                 <div className="flex gap-2">
@@ -183,13 +169,13 @@
                                     <button onClick={() => { if(inputCode.toUpperCase()==='FRANK2026'){setIsUnlocked(true);setShowPaywall(false);} }} className="bg-black text-white px-4 font-black text-xs uppercase">Enter</button>
                                 </div>
                             </div>
-                            <button onClick={() => setShowPaywall(false)} className="mt-8 text-[10px] font-black uppercase underline">Go Back</button>
+                            <button onClick={() => setShowPaywall(false)} className="mt-8 text-[10px] font-black underline uppercase">Go Back</button>
                         </div>
                     )}
                     <header className="border-b-4 border-black p-4 flex justify-between items-center bg-white z-50">
-                        <h1 className="text-2xl font-black uppercase tracking-tighter italic">Scriptread</h1>
+                        <h1 className="text-2xl font-black uppercase italic">Scriptread</h1>
                         <div className="flex gap-3">
-                            <button onClick={masterAndExport} className="px-4 py-2 border-4 border-black font-black text-[10px] hover:bg-black hover:text-white transition-all uppercase">{isExporting ? `${exportProgress}%` : "Master & Export"}</button>
+                            <button onClick={masterAndExport} className="px-4 py-2 border-4 border-black font-black text-[10px] hover:bg-black hover:text-white transition-all uppercase">{isExporting ? "Working..." : "Master & Export"}</button>
                             <label className="px-4 py-2 bg-black text-white font-black text-[10px] cursor-pointer hover:invert border-2 border-black uppercase">Load PDF <input type="file" className="hidden" accept=".pdf" onChange={(e) => {
                                 const file = e.target.files[0]; if (!file) return; stopAudio(); const reader = new FileReader();
                                 reader.onload = async () => {
@@ -209,12 +195,12 @@
                             <div className="p-2 bg-black text-white font-black text-[10px] uppercase text-center sticky top-0 z-50 italic">Cast</div>
                             <div className="p-4 space-y-6">
                                 <div className="p-2 border-2 border-black bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
-                                    <div className="flex justify-between items-center mb-1"><p className="text-[9px] font-black text-gray-400 uppercase">Narrator</p><button onClick={() => previewVoice(voiceMap.Narrator)} className="text-[8px] font-black underline uppercase">Hear</button></div>
+                                    <div className="flex justify-between items-center mb-1"><p className="text-[9px] font-black text-gray-400 uppercase">Narrator</p><button onClick={() => {}} className="text-[8px] font-black underline uppercase">Hear</button></div>
                                     <select onMouseDown={(e) => e.target.parentElement.scrollIntoView({ behavior: 'smooth', block: 'start' })} value={voiceMap.Narrator} onChange={(e) => setVoiceMap({...voiceMap, Narrator: e.target.value})}><VoiceList /></select>
                                 </div>
                                 {characters.map(char => (
                                     <div key={char} className="p-2 border-2 border-black bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
-                                        <div className="flex justify-between items-center mb-1"><p className="text-[9px] font-black uppercase">{char}</p><button onClick={() => previewVoice(voiceMap[char] || "Abby")} className="text-[8px] font-black underline uppercase">Hear</button></div>
+                                        <div className="flex justify-between items-center mb-1"><p className="text-[9px] font-black uppercase">{char}</p><button onClick={() => {}} className="text-[8px] font-black underline uppercase">Hear</button></div>
                                         <select onMouseDown={(e) => e.target.parentElement.scrollIntoView({ behavior: 'smooth', block: 'start' })} value={voiceMap[char] || "Abby"} onChange={(e) => setVoiceMap({...voiceMap, [char]: e.target.value})}><VoiceList /></select>
                                     </div>
                                 ))}
@@ -231,7 +217,10 @@
                     </div>
                     <footer className="shrink-0 border-t-4 border-black p-6 bg-white flex justify-center items-center gap-10">
                         <button onClick={() => { stopAudio(); setCurrentIdx(Math.max(0, currentIdx - 1)); }}><svg width="32" height="32" viewBox="0 0 24 24" fill="black"><polygon points="11 19 2 12 11 5 11 19"/><polygon points="22 19 13 12 22 5 22 19"/></svg></button>
-                        <button onClick={togglePlay} className="bg-black text-white p-5 rounded-full shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-y-1 transition-all">
+                        <button onClick={() => {
+                             if (isPlaying) { stopAudio(); }
+                             else { if (audioContext.current.state === 'suspended') audioContext.current.resume(); isPlayingRef.current = true; setIsPlaying(true); playSegment(currentIdx === -1 ? 0 : currentIdx); }
+                        }} className="bg-black text-white p-5 rounded-full shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-y-1">
                             {isPlaying ? <svg width="32" height="32" viewBox="0 0 24 24" fill="white"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> : <svg width="32" height="32" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg>}
                         </button>
                         <button onClick={() => { stopAudio(); setCurrentIdx(Math.min(segments.length - 1, currentIdx + 1)); }}><svg width="32" height="32" viewBox="0 0 24 24" fill="black"><polygon points="13 19 22 12 13 5 13 19"/><polygon points="2 19 11 12 2 5 2 19"/></svg></button>
