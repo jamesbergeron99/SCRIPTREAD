@@ -15,8 +15,7 @@
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: black; }
         select { 
-            appearance: none; 
-            background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%223%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M6%209l6%206%206-6%22%3E%3C%2Fpath%3E%3C%2Fsvg%3E"); 
+            appearance: none; background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%223%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M6%209l6%206%206-6%22%3E%3C%2Fpath%3E%3C%2Fsvg%3E"); 
             background-repeat: no-repeat; background-position: right 0.5rem center; padding-right: 1.5rem;
             width: 100%; border: 2px solid black; font-size: 11px; font-weight: 700; background-color: white; cursor: pointer;
         }
@@ -53,9 +52,6 @@
             const isPlayingRef = useRef(false);
             const TRIAL_LIMIT = 30;
 
-            // KEY REMAINS SECURE (Environment Variable only)
-            const API_KEY = window.REACT_APP_INWORLD_KEY || "";
-
             useEffect(() => {
                 window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
                 audioContext.current = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
@@ -71,11 +67,10 @@
             };
 
             const fetchAudio = async (text, voiceId) => {
-                if (!API_KEY) { console.error("API Key Missing."); return; }
-                const response = await fetch("https://api.inworld.ai/tts/v1/voice", {
+                const response = await fetch("/api/tts", {
                     method: "POST",
-                    headers: { "Authorization": `Basic ${API_KEY}`, "Content-Type": "application/json" },
-                    body: JSON.stringify({ text, voiceId: voiceId || "Abby", modelId: "inworld-tts-1.5-max" })
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ text, voiceId: voiceId || "Abby" })
                 });
                 const data = await response.json();
                 return await audioContext.current.decodeAudioData(new Uint8Array(atob(data.audioContent).split("").map(c => c.charCodeAt(0))).buffer);
@@ -98,18 +93,16 @@
 
                 lines.forEach(line => {
                     let text = line.text.trim();
-                    const x = line.x;
-                    // STRICT PAGE NUMBER FILTER
                     if (!text || /^\d+$/.test(text) || /^PAGE\s+\d+$/i.test(text) || /^\d+\.$/.test(text)) return;
                     text = text.replace(/\([^)]*\)/g, "").trim();
                     if (!text) return;
                     const expandedText = text.replace(/\bINT\b\.?/gi, "Interior").replace(/\bEXT\b\.?/gi, "Exterior");
                     const isSlug = expandedText.startsWith("Interior") || expandedText.startsWith("Exterior");
-                    const isCenteredChar = x > 180 && text === text.toUpperCase() && text.length < 30 && !isSlug;
+                    const isCenteredChar = line.x > 180 && text === text.toUpperCase() && text.length < 30 && !isSlug;
 
                     if (isSlug) { flushAction(); finalBlocks.push({ type: 'narrator', text: expandedText }); }
                     else if (isCenteredChar) { flushAction(); foundChars.add(text); finalBlocks.push({ type: 'dialogue', character: text, text: "" }); }
-                    else if (x > 120 && x < 350 && finalBlocks.length > 0 && finalBlocks[finalBlocks.length - 1].type === 'dialogue') {
+                    else if (line.x > 120 && line.x < 350 && finalBlocks.length > 0 && finalBlocks[finalBlocks.length - 1].type === 'dialogue') {
                         finalBlocks[finalBlocks.length - 1].text += " " + text;
                     } else { currentActionText += " " + expandedText; }
                 });
@@ -130,8 +123,7 @@
                     source.buffer = buffer;
                     source.connect(audioContext.current.destination);
                     source.onended = () => { setTotalSeconds(prev => prev + buffer.duration); if (isPlayingRef.current) playSegment(index + 1); };
-                    activeSource.current = source;
-                    source.start();
+                    activeSource.current = source; source.start();
                 } catch (e) { if(isPlayingRef.current) playSegment(index + 1); }
             };
 
@@ -187,11 +179,8 @@
                     {showPaywall && (
                         <div className="pay-screen">
                             <h2 className="text-2xl font-black uppercase mb-4 tracking-tighter italic">Support the Production</h2>
-                            <p className="font-bold text-sm mb-6 leading-tight uppercase italic text-gray-600 max-w-md">To cover the cost of high-quality AI narration and continue this table read, please consider a donation of $2.50 per script.</p>
-                            
-                            {/* INTEGRATED PAYPAL.ME LINK */}
+                            <p className="font-bold text-sm mb-6 leading-tight uppercase italic text-gray-600 max-w-md">To continue this table read with high-quality AI narration, please consider a donation of $2.50 per script.</p>
                             <a href="https://paypal.me/jamesbergeron1252/2.50" target="_blank" className="bg-black text-white px-8 py-4 font-black uppercase text-sm mb-8 hover:invert transition-all border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">Donate $2.50 via PayPal</a>
-                            
                             <div className="border-t-4 border-black pt-6 w-64">
                                 <p className="text-[10px] font-black uppercase mb-2">Have an unlock code?</p>
                                 <div className="flex gap-2">
@@ -203,7 +192,7 @@
                         </div>
                     )}
 
-                    <header className="border-b-4 border-black p-4 flex justify-between items-center bg-white shrink-0 z-50 shadow-sm">
+                    <header className="border-b-4 border-black p-4 flex justify-between items-center bg-white shrink-0 z-50">
                         <h1 className="text-2xl font-black uppercase tracking-tighter italic">Scriptread</h1>
                         <div className="flex gap-3">
                             {!isUnlocked && <div className="text-[10px] font-black px-2 py-2 bg-yellow-400 border-2 border-black uppercase self-center">Trial: {Math.round(totalSeconds)}s / 30s</div>}
