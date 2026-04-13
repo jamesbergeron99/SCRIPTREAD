@@ -16,23 +16,26 @@
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: black; }
         
-        /* THE UI FIX: No more pop-ups. This is an inline scroll box. */
-        .custom-voice-picker {
-            width: 100%;
-            height: 120px; /* Fixed height so it can't grow off-screen */
-            overflow-y: auto;
-            border: 2px solid black;
-            background: white;
-            font-size: 10px;
-            margin-top: 4px;
-        }
-        .voice-option {
-            padding: 4px 8px;
+        /* RESTORED: Clean dropdown style with visibility fix */
+        select { 
+            appearance: none; 
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%223%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M6%209l6%206%206-6%22%3E%3C%2Fpath%3E%3C%2Fsvg%3E"); 
+            background-repeat: no-repeat; 
+            background-position: right 0.5rem center; 
+            padding-right: 1.5rem;
             cursor: pointer;
-            border-bottom: 1px solid #eee;
+            width: 100%;
+            border: 2px solid black;
+            font-size: 10px;
+            font-weight: 700;
+            background-color: white;
         }
-        .voice-option:hover { background: black; color: white; }
-        .voice-option.selected { background: #e5e7eb; font-weight: 800; }
+
+        /* Prevent system-level pop-ups from going off-screen by locking height in sidebar */
+        select:focus {
+            outline: none;
+            border-color: #000;
+        }
 
         .paywall-overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.98); backdrop-filter: blur(20px); z-index: 10000; display: flex; align-items: center; justify-content: center; }
     </style>
@@ -43,11 +46,11 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        const INWORLD_VOICES = [
-            { group: "Narrators", voices: [{ id: "Selene", name: "Selene" }, { id: "default-oglabcjnetcklcq7rghmbw__frank2", name: "Frank" }] },
-            { group: "Female", voices: [{ id: "Abby", name: "Abby" }, { id: "Amina", name: "Amina" }, { id: "Anjali", name: "Anjali" }, { id: "Aoede", name: "Aoede" }, { id: "Ashley", name: "Ashley" }, { id: "Bianca", name: "Bianca" }, { id: "Celeste", name: "Celeste" }, { id: "Chloe", name: "Chloe" }, { id: "Claire", name: "Claire" }, { id: "Darlene", name: "Darlene" }, { id: "Deborah", name: "Deborah" }, { id: "Eleanor", name: "Eleanor" }, { id: "Evelyn", name: "Evelyn" }, { id: "Hana", name: "Hana" }, { id: "Jessica", name: "Jessica" }, { id: "Kelsey", name: "Kelsey" }, { id: "Lauren", name: "Lauren" }, { id: "Leda", name: "Leda" }, { id: "Loretta", name: "Loretta" }, { id: "Luna", name: "Luna" }, { id: "Marlene", name: "Marlene" }, { id: "Mia", name: "Mia" }, { id: "Miranda", name: "Miranda" }, { id: "Nadia", name: "Nadia" }, { id: "Naomi", name: "Naomi" }, { id: "Olivia", name: "Olivia" }, { id: "Pippa", name: "Pippa" }, { id: "Pixie", name: "Pixie" }, { id: "Riley", name: "Riley" }, { id: "Saanvi", name: "Saanvi" }, { id: "Sarah", name: "Sarah" }, { id: "Serena", name: "Serena" }, { id: "Sophie", name: "Sophie" }, { id: "Tessa", name: "Tessa" }, { id: "Veronica", name: "Veronica" }, { id: "Victoria", name: "Victoria" }] },
-            { group: "Male", voices: [{ id: "Alex", name: "Alex" }, { id: "Arjun", name: "Arjun" }, { id: "Avery", name: "Avery" }, { id: "Blake", name: "Blake" }, { id: "Brandon", name: "Brandon" }, { id: "Brian", name: "Brian" }, { id: "Callum", name: "Callum" }, { id: "Carter", name: "Carter" }, { id: "Cedric", name: "Cedric" }, { id: "Clive", name: "Clive" }, { id: "Conrad", name: "Conrad" }, { id: "Damon", name: "Damon" }, { id: "Dennis", name: "Dennis" }, { id: "Derek", name: "Derek" }, { id: "Dominus", name: "Dominus" }, { id: "Duncan", name: "Duncan" }, { id: "Edward", name: "Edward" }, { id: "Elliott", name: "Elliott" }, { id: "Ethan", name: "Ethan" }, { id: "Evan", name: "Evan" }, { id: "Felix", name: "Felix" }, { id: "Gareth", name: "Gareth" }, { id: "Graham", name: "Graham" }, { id: "Hamish", name: "Hamish" }, { id: "Hank", name: "Hank" }, { id: "James", name: "James" }, { id: "Jason", name: "Jason" }, { id: "Jonah", name: "Jonah" }, { id: "Levi", name: "Levi" }, { id: "Liam", name: "Liam" }, { id: "Lucian", name: "Lucian" }, { id: "Malcolm", name: "Malcolm" }, { id: "Marcus", name: "Marcus" }, { id: "Mark", name: "Mark" }, { id: "Nate", name: "Nate" }, { id: "Oliver", name: "Oliver" }, { id: "Reed", name: "Reed" }, { id: "Rupert", name: "Rupert" }, { id: "Sebastian", name: "Sebastian" }, { id: "Simon", name: "Simon" }, { id: "Timothy", name: "Timothy" }, { id: "Trevor", name: "Trevor" }, { id: "Tristan", name: "Tristan" }, { id: "Tyler", name: "Tyler" }, { id: "Victor", name: "Victor" }, { id: "Vinny", name: "Vinny" }] }
-        ];
+        const INWORLD_VOICES = {
+            narrators: [{ id: "Selene", name: "Selene (Default)" }, { id: "default-oglabcjnetcklcq7rghmbw__frank2", name: "Frank" }],
+            female: [{ id: "Abby", name: "Abby" }, { id: "Amina", name: "Amina" }, { id: "Anjali", name: "Anjali" }, { id: "Aoede", name: "Aoede" }, { id: "Ashley", name: "Ashley" }, { id: "Bianca", name: "Bianca" }, { id: "Celeste", name: "Celeste" }, { id: "Chloe", name: "Chloe" }, { id: "Claire", name: "Claire" }, { id: "Darlene", name: "Darlene" }, { id: "Deborah", name: "Deborah" }, { id: "Eleanor", name: "Eleanor" }, { id: "Evelyn", name: "Evelyn" }, { id: "Hana", name: "Hana" }, { id: "Jessica", name: "Jessica" }, { id: "Kelsey", name: "Kelsey" }, { id: "Lauren", name: "Lauren" }, { id: "Leda", name: "Leda" }, { id: "Loretta", name: "Loretta" }, { id: "Luna", name: "Luna" }, { id: "Marlene", name: "Marlene" }, { id: "Mia", name: "Mia" }, { id: "Miranda", name: "Miranda" }, { id: "Nadia", name: "Nadia" }, { id: "Naomi", name: "Naomi" }, { id: "Olivia", name: "Olivia" }, { id: "Pippa", name: "Pippa" }, { id: "Pixie", name: "Pixie" }, { id: "Riley", name: "Riley" }, { id: "Saanvi", name: "Saanvi" }, { id: "Sarah", name: "Sarah" }, { id: "Serena", name: "Serena" }, { id: "Sophie", name: "Sophie" }, { id: "Tessa", name: "Tessa" }, { id: "Veronica", name: "Veronica" }, { id: "Victoria", name: "Victoria" }],
+            male: [{ id: "Alex", name: "Alex" }, { id: "Arjun", name: "Arjun" }, { id: "Avery", name: "Avery" }, { id: "Blake", name: "Blake" }, { id: "Brandon", name: "Brandon" }, { id: "Brian", name: "Brian" }, { id: "Callum", name: "Callum" }, { id: "Carter", name: "Carter" }, { id: "Cedric", name: "Cedric" }, { id: "Clive", name: "Clive" }, { id: "Conrad", name: "Conrad" }, { id: "Damon", name: "Damon" }, { id: "Dennis", name: "Dennis" }, { id: "Derek", name: "Derek" }, { id: "Dominus", name: "Dominus" }, { id: "Duncan", name: "Duncan" }, { id: "Edward", name: "Edward" }, { id: "Elliott", name: "Elliott" }, { id: "Ethan", name: "Ethan" }, { id: "Evan", name: "Evan" }, { id: "Felix", name: "Felix" }, { id: "Gareth", name: "Gareth" }, { id: "Graham", name: "Graham" }, { id: "Hamish", name: "Hamish" }, { id: "Hank", name: "Hank" }, { id: "James", name: "James" }, { id: "Jason", name: "Jason" }, { id: "Jonah", name: "Jonah" }, { id: "Levi", name: "Levi" }, { id: "Liam", name: "Liam" }, { id: "Lucian", name: "Lucian" }, { id: "Malcolm", name: "Malcolm" }, { id: "Marcus", name: "Marcus" }, { id: "Mark", name: "Mark" }, { id: "Nate", name: "Nate" }, { id: "Oliver", name: "Oliver" }, { id: "Reed", name: "Reed" }, { id: "Rupert", name: "Rupert" }, { id: "Sebastian", name: "Sebastian" }, { id: "Simon", name: "Simon" }, { id: "Timothy", name: "Timothy" }, { id: "Trevor", name: "Trevor" }, { id: "Tristan", name: "Tristan" }, { id: "Tyler", name: "Tyler" }, { id: "Victor", name: "Victor" }, { id: "Vinny", name: "Vinny" }]
+        };
 
         const Scriptread = () => {
             const [segments, setSegments] = useState([]);
@@ -118,6 +121,7 @@
                     let text = line.text.trim();
                     const isPageNum = text.match(/^\d+$/) || text.match(/^PAGE\s+\d+$/i) || text.match(/^\d+\s*\.$/);
                     if (!text || isPageNum) return;
+
                     text = text.replace(/\([^)]*\)/g, "").trim();
                     if (!text) return;
 
@@ -134,12 +138,12 @@
                         finalBlocks.push({ type: 'dialogue', character: text, text: "" });
                     } else if (line.x > 120 && line.x < 350) {
                         if (finalBlocks.length > 0 && finalBlocks[finalBlocks.length - 1].type === 'dialogue') {
-                            finalBlocks[finalBlocks.length - 1].text += " " + text;
+                            finalBlocks[finalBlocks.length - 1].text += (finalBlocks[finalBlocks.length - 1].text ? " " : "") + text;
                         } else {
-                            currentActionText += " " + expandedText;
+                            currentActionText += (currentActionText ? " " : "") + expandedText;
                         }
                     } else {
-                        currentActionText += " " + expandedText;
+                        currentActionText += (currentActionText ? " " : "") + expandedText;
                     }
                 });
                 flushAction();
@@ -228,23 +232,12 @@
                 }
             };
 
-            const InlinePicker = ({ current, onSelect }) => (
-                <div className="custom-voice-picker custom-scrollbar">
-                    {INWORLD_VOICES.map(group => (
-                        <div key={group.group}>
-                            <div className="bg-gray-100 px-2 py-1 font-black text-[8px] uppercase">{group.group}</div>
-                            {group.voices.map(v => (
-                                <div 
-                                    key={v.id} 
-                                    className={`voice-option ${current === v.id ? 'selected' : ''}`}
-                                    onClick={() => onSelect(v.id)}
-                                >
-                                    {v.name}
-                                </div>
-                            ))}
-                        </div>
-                    ))}
-                </div>
+            const VoiceOptions = () => (
+                <>
+                    <optgroup label="Narrators">{INWORLD_VOICES.narrators.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
+                    <optgroup label="Female">{INWORLD_VOICES.female.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
+                    <optgroup label="Male">{INWORLD_VOICES.male.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</optgroup>
+                </>
             );
 
             return (
@@ -255,7 +248,6 @@
                                 <h2 className="text-4xl font-black uppercase mb-6 italic tracking-tighter">Script Locked</h2>
                                 <p className="font-bold text-sm mb-12 leading-tight uppercase italic text-gray-700">Contribute to the cost of professional voices to unlock the full script.</p>
                                 <div id="paypal-button-container" className="flex justify-center min-h-[150px]"></div>
-                                <button onClick={() => setShowPaywall(false)} className="mt-6 text-[10px] font-black uppercase underline">Maybe Later</button>
                             </div>
                         </div>
                     )}
@@ -281,17 +273,23 @@
                     </header>
 
                     <div className="flex-1 flex overflow-hidden">
-                        <aside className="w-64 border-r-4 border-black bg-gray-50 overflow-y-auto shrink-0 custom-scrollbar">
+                        <aside className="w-64 border-r-4 border-black bg-gray-50 overflow-y-auto shrink-0 custom-scrollbar pb-64">
                             <div className="p-2 bg-black text-white font-black text-[10px] uppercase italic text-center tracking-widest sticky top-0 z-50">Cast</div>
                             <div className="p-4 space-y-6">
                                 <div className="p-2 border-2 border-black bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
                                     <p className="text-[9px] font-black text-gray-400 uppercase mb-1">Narrator</p>
-                                    <InlinePicker current={voiceMap.Narrator} onSelect={(id) => setVoiceMap({...voiceMap, Narrator: id})} />
+                                    <select 
+                                        value={voiceMap.Narrator} 
+                                        onChange={(e) => setVoiceMap({...voiceMap, Narrator: e.target.value})}
+                                    ><VoiceOptions /></select>
                                 </div>
                                 {characters.map(char => (
                                     <div key={char} className="p-2 border-2 border-black bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
                                         <p className="text-[9px] font-black uppercase tracking-tight mb-1">{char}</p>
-                                        <InlinePicker current={voiceMap[char] || "Abby"} onSelect={(id) => setVoiceMap({...voiceMap, [char]: id})} />
+                                        <select 
+                                            value={voiceMap[char] || "Abby"} 
+                                            onChange={(e) => setVoiceMap({...voiceMap, [char]: e.target.value})}
+                                        ><VoiceOptions /></select>
                                     </div>
                                 ))}
                             </div>
