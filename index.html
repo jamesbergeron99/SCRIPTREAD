@@ -18,7 +18,6 @@
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: black; }
         
-        /* DROPDOWN FIX: Clean and accessible */
         select { 
             appearance: none; 
             background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%223%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M6%209l6%206%206-6%22%3E%3C%2Fpath%3E%3C%2Fsvg%3E"); 
@@ -33,14 +32,15 @@
             cursor: pointer;
         }
 
-        .locked-overlay { 
+        .pay-screen { 
             display: flex; 
             flex-direction: column;
             align-items: center; 
             justify-content: center; 
             height: 100%;
-            background: white;
-            padding: 2rem;
+            background: #f9f9f9;
+            border: 4px solid black;
+            margin: 20px;
         }
     </style>
 </head>
@@ -79,25 +79,33 @@
                 audioContext.current = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
             }, []);
 
+            // MONITOR TRIAL TIME
             useEffect(() => {
-                if (!isUnlocked && totalSeconds >= TRIAL_LIMIT) { stopAudio(); setShowPaywall(true); }
+                if (!isUnlocked && totalSeconds >= TRIAL_LIMIT) {
+                    stopAudio();
+                    setShowPaywall(true);
+                }
             }, [totalSeconds, isUnlocked]);
 
-            // HARD-INIT PAYPAL
+            // HARD-RENDER PAYPAL WHEN TRIGGERED
             useEffect(() => {
                 if (showPaywall && window.paypal) {
-                    const checkContainer = setInterval(() => {
-                        const el = document.getElementById('paypal-button-container');
-                        if (el) {
-                            el.innerHTML = '';
+                    const renderButton = () => {
+                        const container = document.getElementById('paypal-button-container');
+                        if (container && container.innerHTML === '') {
                             window.paypal.HostedButtons({
                                 hostedButtonId: "BAAK4FNNEoRhK_jriVX-V3QO-iWVuGEuUdAmvgVHX6pluidxESAwHaGB_fm7WGrOSxe-6VcmE6xZvnvdjU",
                                 onApprove: () => { setIsUnlocked(true); setShowPaywall(false); }
                             }).render("#paypal-button-container");
-                            clearInterval(checkContainer);
+                        }
+                    };
+                    const interval = setInterval(() => {
+                        if (document.getElementById('paypal-button-container')) {
+                            renderButton();
+                            clearInterval(interval);
                         }
                     }, 100);
-                    return () => clearInterval(checkContainer);
+                    return () => clearInterval(interval);
                 }
             }, [showPaywall]);
 
@@ -122,7 +130,7 @@
 
             const previewVoice = async (vId) => {
                 if (audioContext.current.state === 'suspended') audioContext.current.resume();
-                const buffer = await fetchAudio("Voice check.", vId);
+                const buffer = await fetchAudio("Voice preview.", vId);
                 const source = audioContext.current.createBufferSource();
                 source.buffer = buffer;
                 source.connect(audioContext.current.destination);
@@ -138,8 +146,8 @@
                 lines.forEach(line => {
                     let text = line.text.trim();
                     const x = line.x;
-                    const isPageNum = text.match(/^\d+$/) || text.match(/^PAGE\s+\d+$/i) || text.match(/^\d+\s*\.$/);
-                    if (!text || isPageNum) return;
+                    // REFINED PAGE NUMBER FILTER
+                    if (!text || text.match(/^\d+$/) || text.match(/^PAGE\s+\d+$/i) || text.match(/^\d+\s*\.$/)) return;
 
                     text = text.replace(/\([^)]*\)/g, "").trim();
                     if (!text) return;
@@ -225,9 +233,9 @@
             return (
                 <div className="flex flex-col h-screen relative font-mono">
                     <header className="border-b-4 border-black p-4 flex justify-between items-center bg-white shrink-0 z-50">
-                        <h1 className="text-2xl font-black uppercase tracking-tighter italic">Scriptread</h1>
+                        <h1 className="text-2xl font-black uppercase tracking-tighter italic text-black">Scriptread</h1>
                         <div className="flex gap-3">
-                            {!isUnlocked && <div className="text-[10px] font-black px-2 py-2 bg-yellow-400 border-2 border-black uppercase tracking-tighter self-center">Trial: {Math.round(totalSeconds)}s / 30s</div>}
+                            {!isUnlocked && <div className="text-[10px] font-black px-2 py-2 bg-yellow-400 border-2 border-black uppercase self-center tracking-tighter">Trial: {Math.round(totalSeconds)}s / 30s</div>}
                             <button onClick={masterAndExport} className="px-4 py-2 border-4 border-black font-black text-[10px] hover:bg-black hover:text-white transition-all uppercase tracking-tighter">{isExporting ? `${exportProgress}%` : "Master & Export"}</button>
                             <label className="px-4 py-2 bg-black text-white font-black text-[10px] cursor-pointer hover:invert border-2 border-black transition-all uppercase tracking-tighter">Load PDF <input type="file" className="hidden" accept=".pdf" onChange={(e) => {
                                 const file = e.target.files[0]; if (!file) return; stopAudio(); const reader = new FileReader();
@@ -251,7 +259,7 @@
                                 <div className="p-2 border-2 border-black bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
                                     <div className="flex justify-between items-center mb-1">
                                         <p className="text-[9px] font-black text-gray-400 uppercase">Narrator</p>
-                                        <button onClick={() => previewVoice(voiceMap.Narrator)} className="text-[8px] font-black underline uppercase">Hear</button>
+                                        <button onClick={() => previewVoice(voiceMap.Narrator)} className="text-[8px] font-black underline uppercase hover:text-black">Hear</button>
                                     </div>
                                     <select onMouseDown={(e) => { e.target.parentElement.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} value={voiceMap.Narrator} onChange={(e) => setVoiceMap({...voiceMap, Narrator: e.target.value})}><VoiceList /></select>
                                 </div>
@@ -259,7 +267,7 @@
                                     <div key={char} className="p-2 border-2 border-black bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
                                         <div className="flex justify-between items-center mb-1">
                                             <p className="text-[9px] font-black uppercase tracking-tight">{char}</p>
-                                            <button onClick={() => previewVoice(voiceMap[char] || "Abby")} className="text-[8px] font-black underline uppercase">Hear</button>
+                                            <button onClick={() => previewVoice(voiceMap[char] || "Abby")} className="text-[8px] font-black underline uppercase hover:text-black">Hear</button>
                                         </div>
                                         <select onMouseDown={(e) => { e.target.parentElement.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} value={voiceMap[char] || "Abby"} onChange={(e) => setVoiceMap({...voiceMap, [char]: e.target.value})}><VoiceList /></select>
                                     </div>
@@ -267,14 +275,15 @@
                             </div>
                         </aside>
 
-                        <main className="flex-1 overflow-y-auto bg-white custom-scrollbar pb-32">
+                        <main className="flex-1 overflow-y-auto bg-white custom-scrollbar">
                             {showPaywall ? (
-                                <div className="locked-overlay">
-                                    <p className="font-black text-sm mb-6 uppercase tracking-widest text-center">Trial limit reached. Please pay to unlock professional voices for the full script.</p>
-                                    <div id="paypal-button-container" className="min-w-[300px]"></div>
+                                <div className="pay-screen">
+                                    <p className="font-black text-sm mb-10 uppercase tracking-widest text-center px-10">Trial over. Please support the professional voices to continue reading.</p>
+                                    <div id="paypal-button-container"></div>
+                                    <button onClick={() => setShowPaywall(false)} className="mt-12 text-[10px] font-black uppercase underline">Close and Exit</button>
                                 </div>
                             ) : (
-                                <div className="p-8">
+                                <div className="p-8 pb-32">
                                     {segments.map((seg, i) => (
                                         <div key={i} className={`p-6 border-2 mb-4 transition-all ${currentIdx === i ? 'bg-black text-white scale-[1.01]' : 'border-black opacity-30'}`}>
                                             {seg.type === 'dialogue' && <p className="text-[10px] font-black uppercase mb-1">{seg.character}</p>}
